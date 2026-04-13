@@ -423,7 +423,22 @@ function MODE:GiveDefaultEquipment(ply, playerClass, hasGordon, medicCount, maxM
     ply:SetNetVar("Inventory", inv)
 
     if not hasGordon and not ply:IsBot() and not savedGordonExists then
-        ply:SetPlayerClass("Gordon", {equipment = playerClass})
+        local mapName = string.lower(tostring(game.GetMap() or ""))
+        local useNativeMapEquipment = string.match(mapName, "^d1_") or string.match(mapName, "^d2_")
+
+        -- External managed-loadout systems can explicitly override this behavior.
+        if _G.ZC_ShouldUseManagedGordonLoadout then
+            local ok, managed = pcall(_G.ZC_ShouldUseManagedGordonLoadout)
+            if ok then
+                useNativeMapEquipment = not (managed == true)
+            end
+        end
+
+        if useNativeMapEquipment then
+            ply:SetPlayerClass("Gordon", {equipment = playerClass})
+        else
+            ply:SetPlayerClass("Gordon", {})
+        end
         zb.GiveRole(ply, "Freeman", clr_rebel)
         wasGordon = true
     else
