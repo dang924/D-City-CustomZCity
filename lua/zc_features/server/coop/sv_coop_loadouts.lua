@@ -228,8 +228,8 @@ local BASE_DEFAULT_COOP_LOADOUTS = {
             {"$random", "weapon_osipr", "weapon_mp7"},
         },
         armor = {
-            torso = ""  -- applied by Combine playerclass,
-            head  = ""  -- applied by Combine playerclass,
+            torso = "", -- applied by Combine playerclass
+            head  = "", -- applied by Combine playerclass
             face = "",
             ears = "",
         }
@@ -244,8 +244,8 @@ local BASE_DEFAULT_COOP_LOADOUTS = {
             "weapon_combinesniper",
         },
         armor = {
-            torso = ""  -- applied by Combine playerclass,
-            head  = ""  -- applied by Combine playerclass,
+            torso = "", -- applied by Combine playerclass
+            head  = "", -- applied by Combine playerclass
             face = "",
             ears = "",
         }
@@ -261,8 +261,8 @@ local BASE_DEFAULT_COOP_LOADOUTS = {
             "weapon_spas12",
         },
         armor = {
-            torso = ""  -- applied by Combine playerclass,
-            head  = ""  -- applied by Combine playerclass,
+            torso = "", -- applied by Combine playerclass
+            head  = "", -- applied by Combine playerclass
             face = "",
             ears = "",
         }
@@ -277,8 +277,8 @@ local BASE_DEFAULT_COOP_LOADOUTS = {
             "weapon_osipr",
         },
         armor = {
-            torso = ""  -- applied by Combine playerclass,
-            head  = ""  -- applied by Combine playerclass,
+            torso = "", -- applied by Combine playerclass
+            head  = "", -- applied by Combine playerclass
             face = "",
             ears = "",
         }
@@ -299,8 +299,8 @@ local BASE_DEFAULT_COOP_LOADOUTS = {
             "weapon_mp7",
         },
         armor = {
-            torso = ""  -- applied by Metrocop playerclass,
-            head  = ""  -- applied by Metrocop playerclass,
+            torso = "", -- applied by Metrocop playerclass
+            head  = "", -- applied by Metrocop playerclass
             face = "",
             ears = "",
         }
@@ -1032,6 +1032,24 @@ local function SelectCoopLoadoutPresetName(subClass, baseClass)
         end
     end
 
+    -- If Gordon presets are present but empty, fall back to configured rebel
+    -- presets so managed non-d1/d2 maps still grant useful loadouts.
+    if baseClass == "Gordon" and #preferred == 0 then
+        local gordonFallbacks = {
+            "Gordon Default",
+            "Rebel Default",
+            "Rebel Assault",
+            "Refugee Default",
+        }
+
+        for _, presetName in ipairs(gordonFallbacks) do
+            local preset = ZC_CoopLoadouts[presetName]
+            if istable(preset) and PresetHasConfiguredWeapons(preset) then
+                return presetName
+            end
+        end
+    end
+
     if #matching == 0 then
         return nil
     end
@@ -1069,8 +1087,8 @@ local function GetCanonicalCurrentMap()
     return mapName
 end
 
--- Use native ZCity Gordon loadouts on HL2 story maps (d1_/d2_).
--- On all other maps, allow managed Gordon loadouts (!manageclasses path).
+-- Use native/base Gordon equipment only on d1_/d2_ maps.
+-- All other maps should use managed Gordon loadouts.
 local function ShouldUseManagedGordonLoadout()
     local canonical = GetCanonicalCurrentMap()
     if canonical == "" then return true end
