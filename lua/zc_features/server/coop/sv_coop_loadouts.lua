@@ -1069,14 +1069,13 @@ local function GetCanonicalCurrentMap()
     return mapName
 end
 
--- Block only known early HL2 chapters so custom maps can use managed Gordon
--- loadouts by default.
+-- Restrict managed Gordon loadouts to HL2 story maps (d1_/d2_) only.
 local function ShouldUseManagedGordonLoadout()
     local canonical = GetCanonicalCurrentMap()
-    if canonical == "" then return true end
-    if string.match(canonical, "^d1_") then return false end
-    if string.match(canonical, "^d2_") then return false end
-    return true
+    if canonical == "" then return false end
+    if string.match(canonical, "^d1_") then return true end
+    if string.match(canonical, "^d2_") then return true end
+    return false
 end
 
 local function ResolveCoopLoadoutContextForPlayer(ply)
