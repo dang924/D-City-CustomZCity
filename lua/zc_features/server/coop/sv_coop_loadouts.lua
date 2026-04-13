@@ -1074,10 +1074,8 @@ end
 local function ShouldUseManagedGordonLoadout()
     local canonical = GetCanonicalCurrentMap()
     if canonical == "" then return true end
-    if string.match(canonical, "^d1_trainstation_") then return false end
-    if string.match(canonical, "^d1_canals_") then return false end
-    if string.match(canonical, "^d1_town_") then return false end
-    if string.match(canonical, "^d2_coast_") then return false end
+    if string.match(canonical, "^d1_") then return false end
+    if string.match(canonical, "^d2_") then return false end
     return true
 end
 

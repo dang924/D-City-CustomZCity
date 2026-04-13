@@ -59,10 +59,8 @@ end
 local function ShouldUseManagedGordonLoadoutLocal()
     local currentMap = CanonicalMapName(game.GetMap())
     if currentMap == "" then return true end
-    if string.match(currentMap, "^d1_trainstation_") then return false end
-    if string.match(currentMap, "^d1_canals_") then return false end
-    if string.match(currentMap, "^d1_town_") then return false end
-    if string.match(currentMap, "^d2_coast_") then return false end
+    if string.match(currentMap, "^d1_") then return false end
+    if string.match(currentMap, "^d2_") then return false end
     return true
 end
 
