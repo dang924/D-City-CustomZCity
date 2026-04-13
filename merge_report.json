@@ -1,0 +1,14 @@
+﻿{
+    "createdAt":  "2026-04-13T16:58:30.5509681-04:00",
+    "base":  "c:\\Users\\DanDa\\OneDrive\\Desktop\\server shi\\Files-DO-NOT-EDIT\\z-city-main-DO-NOT-EDIT",
+    "patch":  "c:\\Users\\DanDa\\Dropbox\\DCity\\DCityAddons\\DCityPatch1.1",
+    "target":  "c:\\Users\\DanDa\\Dropbox\\DCity\\DcityFiles\\ZCityTestingBranch\\Z-City_Merged_20260413_165825",
+    "robocopyBaseExitCode":  1,
+    "robocopyPatchExitCode":  3,
+    "overrideCount":  1,
+    "overrides":  {
+                      "RelativePath":  "addon.json",
+                      "BaseFile":  "c:\\Users\\DanDa\\OneDrive\\Desktop\\server shi\\Files-DO-NOT-EDIT\\z-city-main-DO-NOT-EDIT\\addon.json",
+                      "PatchFile":  "C:\\Users\\DanDa\\Dropbox\\DCity\\DCityAddons\\DCityPatch1.1\\addon.json"
+                  }
+}
