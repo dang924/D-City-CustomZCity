@@ -1069,13 +1069,14 @@ local function GetCanonicalCurrentMap()
     return mapName
 end
 
--- Restrict managed Gordon loadouts to HL2 story maps (d1_/d2_) only.
+-- Use native ZCity Gordon loadouts on HL2 story maps (d1_/d2_).
+-- On all other maps, allow managed Gordon loadouts (!manageclasses path).
 local function ShouldUseManagedGordonLoadout()
     local canonical = GetCanonicalCurrentMap()
-    if canonical == "" then return false end
-    if string.match(canonical, "^d1_") then return true end
-    if string.match(canonical, "^d2_") then return true end
-    return false
+    if canonical == "" then return true end
+    if string.match(canonical, "^d1_") then return false end
+    if string.match(canonical, "^d2_") then return false end
+    return true
 end
 
 local function ResolveCoopLoadoutContextForPlayer(ply)
