@@ -44,17 +44,21 @@ local function ResolveTownSkipReturnTarget(sourceMap, fallbackTarget)
 end
 
 local DATA_FILE = "zcity_skip_return.json"
+local DATA_FILE_BAK = "zcity_skip_return_bak.json"
 
 local function ReadSkipData()
-    if not file.Exists(DATA_FILE, "DATA") then return {} end
-    local raw = file.Read(DATA_FILE, "DATA")
-    if not raw or raw == "" then return {} end
-    local parsed = util.JSONToTable(raw)
+    local raw = file.Exists(DATA_FILE, "DATA") and file.Read(DATA_FILE, "DATA") or ""
+    if raw == "" or raw == "{}" then
+        raw = file.Exists(DATA_FILE_BAK, "DATA") and file.Read(DATA_FILE_BAK, "DATA") or ""
+    end
+    local parsed = raw ~= "" and util.JSONToTable(raw) or nil
     return istable(parsed) and parsed or {}
 end
 
 local function WriteSkipData(tbl)
-    file.Write(DATA_FILE, util.TableToJSON(tbl or {}, true) or "{}")
+    local js = util.TableToJSON(tbl or {}, true) or "{}"
+    file.Write(DATA_FILE, js)
+    file.Write(DATA_FILE_BAK, js)
 end
 
 local function PointInAABB(pos, mins, maxs)

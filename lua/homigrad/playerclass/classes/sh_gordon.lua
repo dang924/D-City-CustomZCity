@@ -21,6 +21,43 @@ local maxMorphine = 4
 local maxMedicine = 600
 local maxPower = 100
 
+local function IsCoopRoundActive()
+    if not CurrentRound then return false end
+
+    local round = CurrentRound()
+    return istable(round) and string.lower(tostring(round.name or "")) == "coop"
+end
+
+local function ShouldUseManagedCoopGordonLoadout()
+    if not IsCoopRoundActive() then return false end
+
+    if _G.ZC_ShouldUseManagedGordonLoadout then
+        local ok, managed = pcall(_G.ZC_ShouldUseManagedGordonLoadout)
+        if ok then
+            return managed == true
+        end
+    end
+
+    return false
+end
+
+local function QueueManagedCoopGordonLoadout(ply)
+    if not IsValid(ply) then return end
+
+    timer.Simple(0, function()
+        if not IsValid(ply) then return end
+
+        if _G.ZC_EnsureManagedGordonLoadout then
+            _G.ZC_EnsureManagedGordonLoadout(ply, 0, 12)
+            return
+        end
+
+        if _G.ZC_ApplyCoopLoadout then
+            pcall(_G.ZC_ApplyCoopLoadout, ply, "default", "Gordon")
+        end
+    end)
+end
+
 local function hevchanged(ply)
     if not ply.HEV or not ply.HEV.Power then return end
 
@@ -64,6 +101,7 @@ function CLASS.On(self, data)
     if CLIENT then return end
     local equipment = data and data.equipment
     local bRestored = data and data.bRestored 
+    local useManagedCoopLoadout = ShouldUseManagedCoopGordonLoadout()
     ApplyAppearance(self,nil,nil,nil,true)
     local Appearance = self.CurAppearance or hg.Appearance.GetRandomAppearance()
     Appearance.AAttachments = ""
@@ -77,7 +115,7 @@ function CLASS.On(self, data)
     self:SetPlayerColor(Color(246, 139, 0):ToVector())
     self:SetSubMaterial()
 
-    if equipment then
+    if equipment and not useManagedCoopLoadout then
         if equipment == "rebel" then
             local wep = self:Give(math.random(2) == 1 and "weapon_osipr" or "weapon_akm")
             self:GiveAmmo(wep:GetMaxClip1() * 3, wep:GetPrimaryAmmoType(), true)
@@ -145,6 +183,10 @@ function CLASS.On(self, data)
         hevchanged(self)
 
         --print("JOOOPAAAA")
+    end
+
+    if useManagedCoopLoadout then
+        QueueManagedCoopGordonLoadout(self)
     end
 end
 

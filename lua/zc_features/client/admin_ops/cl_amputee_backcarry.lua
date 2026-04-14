@@ -156,7 +156,7 @@ hook.Add("HUDPaint", "ZC_AmputeeBackCarryIndicator", function()
     local cx = sw / 2
     local cy = sh * 0.75  -- Moved down to avoid overlap with revive prompt at 0.62
     local a = math.floor(alpha * 255)
-    local action = showDrop and "Drop" or "Back Carry"
+    local action = showDrop and "Drop" or "Hold Back Carry"
 
     draw.RoundedBox(4, cx - 15, cy - 15, 30, 30, Color(40, 40, 40, a))
     draw.SimpleText("E", "HomigradFontMedium", cx, cy, Color(COL_KEY.r, COL_KEY.g, COL_KEY.b, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)

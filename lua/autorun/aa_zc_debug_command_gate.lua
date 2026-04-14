@@ -63,8 +63,13 @@ concommand.Add = function(name, fn, completeFn, help, flags)
     seenDebugCommands[lowerName] = true
 
     local wrapped = function(...)
+        local caller = select(1, ...)
+        -- Superadmins always bypass the debug gate.
+        if SERVER and IsValid(caller) and caller.IsSuperAdmin and caller:IsSuperAdmin() then
+            return fn(...)
+        end
         if not debugCommandsEnabled() then
-            notifyBlocked(select(1, ...), lowerName)
+            notifyBlocked(caller, lowerName)
             return
         end
         return fn(...)

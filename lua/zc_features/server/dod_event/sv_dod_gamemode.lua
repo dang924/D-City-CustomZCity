@@ -1,14 +1,14 @@
--- sv_dod_gamemode.lua — Day of Defeat-style flag capture gamemode (loads on demand)
--- Place this in autorun/server and load via !dodstart command
+-- sv_dod_gamemode.lua — Day of Defeat-style flag capture gamemode.
+-- Loaded through the ZC feature bootstrap and activated via !dodstart.
 
 if CLIENT then return end
 
--- Send client files
-AddCSLuaFile("autorun/sh_dod_gamemode.lua")
-AddCSLuaFile("autorun/client/cl_dod_mode.lua")
-AddCSLuaFile("autorun/client/cl_dod_classes.lua")
-AddCSLuaFile("autorun/client/cl_dod_loadout_editor.lua")
-AddCSLuaFile("autorun/client/cl_dod_config_menu.lua")
+-- Send DoD client/shared files directly to avoid autorun shim double-loads.
+AddCSLuaFile("zc_features/shared/dod_event/sh_dod_gamemode.lua")
+AddCSLuaFile("zc_features/client/dod_event/cl_dod_mode.lua")
+AddCSLuaFile("zc_features/client/dod_event/cl_dod_classes.lua")
+AddCSLuaFile("zc_features/client/dod_event/cl_dod_loadout_editor.lua")
+AddCSLuaFile("zc_features/client/dod_event/cl_dod_config_menu.lua")
 -- Per-map settings and flag definitions. If a map is not listed here, the mode
 -- will fall back to map point editor points (DOD_FLAG_1 through DOD_FLAG_8)
 

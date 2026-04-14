@@ -227,6 +227,9 @@ local function Initialize()
         timer.Simple(0, function()
             if not IsValid(ply) then return end
             ply:SetPlayerClass("Gordon", GetNativeGordonClassData())
+            if ZC_ShouldUseManagedGordonLoadout and ZC_ShouldUseManagedGordonLoadout() == true and ZC_EnsureManagedGordonLoadout then
+                ZC_EnsureManagedGordonLoadout(ply, 0.1, 12)
+            end
             ply.ZC_ForceGordon = nil
             ply:ChatPrint("[ZCity] Solo mode — you are Gordon Freeman.")
         end)

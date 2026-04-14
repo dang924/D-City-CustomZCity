@@ -1,4 +1,4 @@
--- Shows a [E] Revive prompt when a Medic or Gordon looks at an incapped player
+-- Shows a tap-[E] revive prompt when a Medic or Gordon looks at an incapped player
 -- within revive range. Fades in and out smoothly.
 --
 -- Uses two detection methods:
@@ -102,10 +102,10 @@ hook.Add("HUDPaint", "ZCity_ReviveIndicator", function()
     draw.RoundedBox(4, cx - keyW / 2, cy - keyH / 2, keyW, keyH, Color(40, 40, 40, a))
     draw.SimpleText("E", "HomigradFontMedium", cx, cy, Color(COL_KEY.r, COL_KEY.g, COL_KEY.b, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
-    -- "Revive" label
+    -- Revive label
     local labelX = cx + keyW / 2 + 8
-    draw.SimpleText("Revive", "HomigradFontMedium", labelX + 1, cy + 1, Color(0, 0, 0, a), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-    draw.SimpleText("Revive", "HomigradFontMedium", labelX, cy, Color(COL_TEXT.r, COL_TEXT.g, COL_TEXT.b, a), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    draw.SimpleText("Tap Revive", "HomigradFontMedium", labelX + 1, cy + 1, Color(0, 0, 0, a), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    draw.SimpleText("Tap Revive", "HomigradFontMedium", labelX, cy, Color(COL_TEXT.r, COL_TEXT.g, COL_TEXT.b, a), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 
     -- Player name below
     draw.SimpleText(targetName, "HomigradFontSmall", cx + 1, cy + 18, Color(0, 0, 0, a), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)

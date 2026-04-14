@@ -114,6 +114,42 @@ local function PatchCoopPersistenceMidRoundSpawn()
             local steamid = ply:SteamID()
             local savedData = hg.CoopPersistence.GetPlayerData(steamid)
 
+            local function ApplyGordonClassForCurrentMap(playerClass, options)
+                options = options or {}
+                if _G.ZC_ApplyCoopClassLoadout then
+                    _G.ZC_ApplyCoopClassLoadout(ply, {
+                        className = "Gordon",
+                        playerEquipment = playerClass,
+                        bRestored = options.bRestored == true,
+                        queueManagedRetry = true,
+                        retryDelay = 0.1,
+                        maxAttempts = 12,
+                    })
+                    return
+                end
+
+                local useManaged = false
+                if _G.ZC_ShouldUseManagedGordonLoadout then
+                    local ok, managed = pcall(_G.ZC_ShouldUseManagedGordonLoadout)
+                    useManaged = ok and managed == true
+                end
+
+                if useManaged then
+                    ply:SetPlayerClass("Gordon", {
+                        bRestored = options.bRestored == true,
+                    })
+                    if _G.ZC_EnsureManagedGordonLoadout then
+                        _G.ZC_EnsureManagedGordonLoadout(ply, 0.1, 12)
+                    end
+                    return
+                end
+
+                ply:SetPlayerClass("Gordon", {
+                    equipment = tostring(playerClass or "rebel"),
+                    bRestored = options.bRestored == true,
+                })
+            end
+
             if savedData then
                 local restored, data = hg.CoopPersistence.RestorePlayerData(ply)
 
@@ -123,15 +159,32 @@ local function PatchCoopPersistenceMidRoundSpawn()
                     local savedRoleColor = data.RoleColor and Color(data.RoleColor[1], data.RoleColor[2], data.RoleColor[3]) or Color(255, 155, 0)
                     local savedSubClass = data.SubClass
 
+                    local currentMap = game.GetMap()
+                    local mapData = currentRound.Maps[currentMap] or { PlayerEqipment = "rebel" }
+                    local playerClass = mapData.PlayerEqipment
+
                     if savedPlayerClass == "Gordon" or savedRole == "Freeman" then
-                        ply:SetPlayerClass("Gordon", { bRestored = true })
+                        ApplyGordonClassForCurrentMap(playerClass, { bRestored = true })
                         zb.GiveRole(ply, "Freeman", Color(255, 155, 0))
                     elseif savedSubClass == "medic" then
                         ply.subClass = "medic"
-                        ply:SetPlayerClass(savedPlayerClass or "Rebel", { bNoEquipment = true })
+                        if _G.ZC_ApplyCoopClassLoadout then
+                            _G.ZC_ApplyCoopClassLoadout(ply, {
+                                className = savedPlayerClass or "Rebel",
+                                subClass = "medic",
+                            })
+                        else
+                            ply:SetPlayerClass(savedPlayerClass or "Rebel", { bNoEquipment = true })
+                        end
                         zb.GiveRole(ply, "Medic", Color(190, 0, 0))
                     else
-                        ply:SetPlayerClass(savedPlayerClass or "Rebel", { bNoEquipment = true })
+                        if _G.ZC_ApplyCoopClassLoadout then
+                            _G.ZC_ApplyCoopClassLoadout(ply, {
+                                className = savedPlayerClass or "Rebel",
+                            })
+                        else
+                            ply:SetPlayerClass(savedPlayerClass or "Rebel", { bNoEquipment = true })
+                        end
                         zb.GiveRole(ply, savedRole or "Rebel", savedRoleColor)
                     end
 
@@ -158,10 +211,23 @@ local function PatchCoopPersistenceMidRoundSpawn()
                 ply:SetNetVar("Inventory", inv)
 
                 if playerClass == "refugee" or playerClass == "citizen" then
-                    ply:SetPlayerClass("Refugee", { bNoEquipment = playerClass == "citizen" })
+                    if _G.ZC_ApplyCoopClassLoadout then
+                        _G.ZC_ApplyCoopClassLoadout(ply, {
+                            className = "Refugee",
+                            skipNativeEquipment = playerClass == "citizen",
+                        })
+                    else
+                        ply:SetPlayerClass("Refugee", { bNoEquipment = playerClass == "citizen" })
+                    end
                     zb.GiveRole(ply, "Refugee", Color(255, 155, 0))
                 elseif playerClass == "rebel" then
-                    ply:SetPlayerClass("Rebel")
+                    if _G.ZC_ApplyCoopClassLoadout then
+                        _G.ZC_ApplyCoopClassLoadout(ply, {
+                            className = "Rebel",
+                        })
+                    else
+                        ply:SetPlayerClass("Rebel")
+                    end
                     zb.GiveRole(ply, "Rebel", Color(255, 155, 0))
                 end
 

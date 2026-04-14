@@ -3,10 +3,9 @@
 -- Uses ZCity's default Rebel/Refugee/subclass equipping as the base,
 -- allowing superadmins to customize and save preset equipment configurations.
 -- Loadouts are stored separately from event menu presets in data/zc_coop_loadouts.json
-
 if CLIENT then return end
 
-AddCSLuaFile("autorun/client/cl_coop_loadout_menu.lua")
+AddCSLuaFile("zc_features/client/coop/cl_coop_loadout_menu.lua")
 
 util.AddNetworkString("ZC_OpenCoopLoadoutMenu")
 util.AddNetworkString("ZC_RequestCoopLoadouts")
@@ -106,7 +105,7 @@ local BASE_DEFAULT_COOP_LOADOUTS = {
         subclass = "default",
         baseClass = "Rebel",
         weapons = {
-            {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osi_pr"},
+            {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osipr"},
             {"$random", "weapon_m9beretta", "weapon_browninghp", "weapon_revolver357", "weapon_revolver2", "weapon_hk_usp", "weapon_glock17"},
             "weapon_hg_hl2nade_tpik",
             "weapon_melee",
@@ -134,7 +133,7 @@ local BASE_DEFAULT_COOP_LOADOUTS = {
             "weapon_needle",
             "weapon_betablock",
             "weapon_adrenaline",
-            {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osi_pr"},
+            {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osipr"},
             {"$random", "weapon_m9beretta", "weapon_browninghp", "weapon_revolver357", "weapon_revolver2", "weapon_hk_usp", "weapon_glock17"},
             "weapon_melee",
             "weapon_walkie_talkie",
@@ -308,11 +307,17 @@ local BASE_DEFAULT_COOP_LOADOUTS = {
     ["Gordon Default"] = {
         subclass = "default",
         baseClass = "Gordon",
-        weapons = {},
+        weapons = {
+            {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osipr"},
+            {"$random", "weapon_m9beretta", "weapon_browninghp", "weapon_revolver357", "weapon_revolver2", "weapon_hk_usp", "weapon_glock17"},
+            "weapon_hg_hl2nade_tpik",
+            "weapon_melee",
+            "weapon_walkie_talkie",
+        },
         armor = {
-            torso = "",
-            head = "",
-            face = "",
+            torso = {"$random", "vest5", "vest4", "vest1"},
+            head = {"$random", "helmet1", "helmet7"},
+            face = {"$random", "mask1", "mask3", "nightvision1", ""},
             ears = "",
         }
     },
@@ -364,10 +369,189 @@ local function GetDefaultCoopLoadouts()
     return out
 end
 
+local STRIP_FACTION_ARMOR_VALUES = {
+    combine_armor = true,
+    combine_helmet = true,
+    metrocop_armor = true,
+    metrocop_helmet = true,
+    gordon_armor = true,
+    gordon_helmet = true,
+    gordon_arm_armor_left = true,
+    gordon_arm_armor_right = true,
+    gordon_leg_armor_left = true,
+    gordon_leg_armor_right = true,
+    gordon_calf_armor_left = true,
+    gordon_calf_armor_right = true,
+}
+
+local function InferCoopLoadoutBaseClassFromName(presetName)
+    local key = string.lower(string.Trim(tostring(presetName or "")))
+    if key == "" then return "Rebel" end
+    if string.find(key, "gordon", 1, true) or string.find(key, "freeman", 1, true) then return "Gordon" end
+    if string.find(key, "metrocop", 1, true) or string.find(key, "metropolice", 1, true) then return "Metrocop" end
+    if string.find(key, "combine", 1, true) then return "Combine" end
+    if string.find(key, "refugee", 1, true) or string.find(key, "citizen", 1, true) then return "Refugee" end
+    return "Rebel"
+end
+
+local function NormalizeCoopLoadoutBaseClass(value, presetName)
+    local key = string.lower(string.Trim(tostring(value or "")))
+    if key == "" then
+        return InferCoopLoadoutBaseClassFromName(presetName)
+    end
+
+    if key == "rebel" or key == "resistance" then return "Rebel" end
+    if key == "refugee" or key == "citizen" then return "Refugee" end
+    if key == "combine" or key == "overwatch" then return "Combine" end
+    if key == "metrocop" or key == "metropolice" or key == "civil protection" or key == "civilprotection" then return "Metrocop" end
+    if key == "gordon" or key == "freeman" or key == "gordon freeman" then return "Gordon" end
+
+    return InferCoopLoadoutBaseClassFromName(presetName)
+end
+
+local function InferCoopLoadoutSubclassFromName(presetName, baseClass)
+    local key = string.lower(string.Trim(tostring(presetName or "")))
+    if string.find(key, "grenadier", 1, true) then return "grenadier" end
+    if string.find(key, "medic", 1, true) then return "medic" end
+    if string.find(key, "sniper", 1, true) then return "sniper" end
+    if string.find(key, "shotgun", 1, true) then return "shotgunner" end
+    if string.find(key, "elite", 1, true) then return "elite" end
+    if baseClass == "Metrocop" then return "metropolice" end
+    return "default"
+end
+
+local function NormalizeCoopLoadoutSubclass(value, baseClass, presetName)
+    local key = string.lower(string.Trim(tostring(value or "")))
+    if key == "" or key == "default" or key == "soldier" then
+        return InferCoopLoadoutSubclassFromName(presetName, baseClass)
+    end
+
+    if key == "citizen" then return "default" end
+    if key == "police" or key == "civil protection" or key == "civilprotection" then return "metropolice" end
+    return key
+end
+
+local function SanitiseCoopArmorTable(armorTbl)
+    if not istable(armorTbl) then return {} end
+
+    local out = {}
+    for slot, val in pairs(armorTbl) do
+        if istable(val) then
+            local filtered = {}
+            for i, entry in ipairs(val) do
+                if i == 1 then
+                    filtered[1] = entry
+                elseif not STRIP_FACTION_ARMOR_VALUES[tostring(entry)] then
+                    filtered[#filtered + 1] = entry
+                end
+            end
+            out[slot] = (#filtered <= 1) and "" or filtered
+        elseif isstring(val) then
+            out[slot] = STRIP_FACTION_ARMOR_VALUES[val] and "" or val
+        else
+            out[slot] = val
+        end
+    end
+
+    return out
+end
+
+local WEAPON_CLASS_ALIASES = {
+    weapon_osi_pr = "weapon_osipr",
+}
+
+local function SanitiseCoopWeaponEntry(entry)
+    if isstring(entry) then
+        return WEAPON_CLASS_ALIASES[string.lower(entry)] or entry
+    end
+
+    if not istable(entry) then return entry end
+
+    if istable(entry.value) then
+        entry = entry.value
+    elseif istable(entry.Value) then
+        entry = entry.Value
+    else
+        entry = table.Copy(entry)
+    end
+
+    for i = 1, #entry do
+        entry[i] = SanitiseCoopWeaponEntry(entry[i])
+    end
+
+    return entry
+end
+
+local function SanitiseCoopWeaponsTable(weaponsTbl)
+    if not istable(weaponsTbl) then return {} end
+
+    local out = {}
+    for i = 1, #weaponsTbl do
+        out[i] = SanitiseCoopWeaponEntry(weaponsTbl[i])
+    end
+    return out
+end
+
+local function NormalizeCoopLoadoutPresetData(presetName, data)
+    data = istable(data) and data or {}
+
+    local baseClass = NormalizeCoopLoadoutBaseClass(
+        data.baseClass or data.className or data.class or data.PlayerClass or data.playerClass,
+        presetName
+    )
+    local subclass = NormalizeCoopLoadoutSubclass(
+        data.subclass or data.subClass or data.SubClass or data.role or data.Role,
+        baseClass,
+        presetName
+    )
+
+    local clean = {
+        subclass = subclass,
+        baseClass = baseClass,
+        weapons = SanitiseCoopWeaponsTable(data.weapons or data.Weapons),
+        armor = SanitiseCoopArmorTable(data.armor or data.Armor),
+    }
+
+    if istable(data.attachments) then
+        clean.attachments = table.Copy(data.attachments)
+    elseif istable(data.Attachments) then
+        clean.attachments = table.Copy(data.Attachments)
+    end
+
+    return clean
+end
+
+local function NormalizeAllLoadedCoopLoadouts()
+    if not istable(ZC_CoopLoadouts) then
+        ZC_CoopLoadouts = {}
+        return
+    end
+
+    local normalized = {}
+    for presetName, presetData in pairs(ZC_CoopLoadouts) do
+        normalized[tostring(presetName)] = NormalizeCoopLoadoutPresetData(presetName, presetData)
+    end
+
+    ZC_CoopLoadouts = normalized
+end
+
 -- ── File Persistence ──────────────────────────────────────────────────────────
 
 local LOADOUTS_FILE = "zc_coop_loadouts.json"
 local LOADOUTS_FILE_BACKUP = "zc_coop_loadouts.backup.json"
+
+local function MergeMissingDefaults(target)
+    local defaults = GetDefaultCoopLoadouts()
+    if not istable(target) then return table.Copy(defaults) end
+
+    for name, preset in pairs(defaults) do
+        if target[name] == nil then
+            target[name] = table.Copy(preset)
+        end
+    end
+
+    return target
+end
 
 local function EnsureCoopLoadoutsPopulated()
     local changed = false
@@ -634,39 +818,100 @@ local function SaveCoopLoadouts()
     return true
 end
 
-local function MergeMissingDefaults(target)
-    local defaults = GetDefaultCoopLoadouts()
-    if not istable(target) then return table.Copy(defaults) end
+local function GetCoopLoadoutFileTimestamp(path, realm)
+    if not file.Exists(path, realm) then return -1 end
 
-    for name, preset in pairs(defaults) do
-        if target[name] == nil then
-            target[name] = table.Copy(preset)
+    local ok, stamp = pcall(file.Time, path, realm)
+    if ok and isnumber(stamp) then
+        return stamp
+    end
+
+    return -1
+end
+
+local function ReadCoopLoadoutSource(path, realm, label)
+    if not file.Exists(path, realm) then return nil end
+
+    local raw = file.Read(path, realm)
+    local parsed = isstring(raw) and util.JSONToTable(raw) or nil
+    if not istable(parsed) or table.Count(parsed) <= 0 then
+        return nil
+    end
+
+    return {
+        path = path,
+        realm = realm,
+        label = label,
+        data = parsed,
+        timestamp = GetCoopLoadoutFileTimestamp(path, realm),
+    }
+end
+
+local function HasCustomCoopLoadoutChanges(tbl)
+    if not istable(tbl) then return false end
+
+    if table.Count(tbl) ~= table.Count(BASE_DEFAULT_COOP_LOADOUTS) then
+        return true
+    end
+
+    for presetName, defaultPreset in pairs(BASE_DEFAULT_COOP_LOADOUTS) do
+        local actualPreset = tbl[presetName]
+        if not istable(actualPreset) then
+            return true
+        end
+
+        local actualJson = util.TableToJSON(NormalizeCoopLoadoutPresetData(presetName, actualPreset), true) or ""
+        local defaultJson = util.TableToJSON(NormalizeCoopLoadoutPresetData(presetName, defaultPreset), true) or ""
+        if actualJson ~= defaultJson then
+            return true
         end
     end
 
-    return target
+    return false
+end
+
+local function SelectPrimaryCoopLoadoutSource()
+    local primary = ReadCoopLoadoutSource(LOADOUTS_FILE, "DATA", "data-primary")
+    local legacy = ReadCoopLoadoutSource(LOADOUTS_FILE, "GAME", "game-primary")
+
+    if primary and legacy then
+        local primaryCustomized = HasCustomCoopLoadoutChanges(primary.data)
+        local legacyCustomized = HasCustomCoopLoadoutChanges(legacy.data)
+
+        if not primaryCustomized and legacyCustomized then
+            return legacy, true
+        end
+
+        if primaryCustomized and not legacyCustomized then
+            return primary, false
+        end
+
+        if (tonumber(legacy.timestamp) or -1) > (tonumber(primary.timestamp) or -1) then
+            return legacy, true
+        end
+
+        return primary, false
+    end
+
+    if legacy and not primary then
+        return legacy, true
+    end
+
+    return primary, false
 end
 
 -- Strip faction armor from all entries in ZC_CoopLoadouts after loading.
 -- Handles legacy JSON that was saved before the faction armor blacklist was added.
 local function SanitiseAllLoadedArmor()
-    local STRIP = {
-        combine_armor=true, combine_helmet=true,
-        metrocop_armor=true, metrocop_helmet=true,
-        gordon_armor=true, gordon_helmet=true,
-        gordon_arm_armor_left=true, gordon_arm_armor_right=true,
-        gordon_leg_armor_left=true, gordon_leg_armor_right=true,
-        gordon_calf_armor_left=true, gordon_calf_armor_right=true,
-    }
     local function clean(armorTbl)
         if not istable(armorTbl) then return armorTbl end
         for slot, val in pairs(armorTbl) do
-            if isstring(val) and STRIP[val] then
+            if isstring(val) and STRIP_FACTION_ARMOR_VALUES[val] then
                 armorTbl[slot] = ""
             elseif istable(val) and val[1] == "$random" then
                 local filtered = {"$random"}
                 for i = 2, #val do
-                    if not STRIP[tostring(val[i])] then filtered[#filtered+1] = val[i] end
+                    if not STRIP_FACTION_ARMOR_VALUES[tostring(val[i])] then filtered[#filtered+1] = val[i] end
                 end
                 armorTbl[slot] = (#filtered <= 1) and "" or filtered
             end
@@ -681,30 +926,30 @@ local function SanitiseAllLoadedArmor()
 end
 
 local function LoadCoopLoadouts()
-    if not file.Exists(LOADOUTS_FILE, "DATA") then
-        -- First run: populate directly from base defaults and save
-        ZC_CoopLoadouts = MergeMissingDefaults({})
-        SaveCoopLoadouts()
-        print("[ZC CoopLoadouts] First run - created defaults (" .. table.Count(ZC_CoopLoadouts) .. " presets)")
-        return
-    end
+    local selectedSource, shouldImportToData = SelectPrimaryCoopLoadoutSource()
 
-    local json = file.Read(LOADOUTS_FILE, "DATA")
-    local parsed = isstring(json) and util.JSONToTable(json) or nil
-
-    if istable(parsed) then
-        ZC_CoopLoadouts = MergeMissingDefaults(parsed)
+    if selectedSource and istable(selectedSource.data) then
+        ZC_CoopLoadouts = MergeMissingDefaults(selectedSource.data)
+        NormalizeAllLoadedCoopLoadouts()
         SanitiseAllLoadedArmor()  -- strip legacy faction armor AFTER loading
-        print("[ZC CoopLoadouts] Loaded " .. table.Count(ZC_CoopLoadouts) .. " presets from file")
+
+        if shouldImportToData then
+            SaveCoopLoadouts()
+            print("[ZC CoopLoadouts] Imported " .. table.Count(ZC_CoopLoadouts) .. " presets from " .. tostring(selectedSource.label) .. " into DATA")
+        else
+            print("[ZC CoopLoadouts] Loaded " .. table.Count(ZC_CoopLoadouts) .. " presets from " .. tostring(selectedSource.label))
+        end
+
         return
     end
 
-    print("[ZC CoopLoadouts] WARNING: Primary loadout file is invalid; trying backup")
+    print("[ZC CoopLoadouts] WARNING: Primary loadout sources are missing/invalid; trying DATA backup")
 
     local backupJson = file.Read(LOADOUTS_FILE_BACKUP, "DATA")
     local backupParsed = isstring(backupJson) and util.JSONToTable(backupJson) or nil
     if istable(backupParsed) then
         ZC_CoopLoadouts = MergeMissingDefaults(backupParsed)
+        NormalizeAllLoadedCoopLoadouts()
         SanitiseAllLoadedArmor()
         SaveCoopLoadouts()
         print("[ZC CoopLoadouts] Restored loadouts from backup (" .. table.Count(ZC_CoopLoadouts) .. " presets)")
@@ -788,6 +1033,40 @@ local function PresetHasConfiguredWeapons(preset)
     end
 
     return false
+end
+
+local DEFAULT_COOP_PRESET_BY_CLASS = {
+    Gordon = {
+        default = "Gordon Default",
+    },
+    Rebel = {
+        default = "Rebel Default",
+        medic = "Rebel Medic",
+        sniper = "Rebel Sniper",
+        grenadier = "Rebel Grenadier",
+    },
+    Refugee = {
+        default = "Refugee Default",
+        medic = "Refugee Medic",
+    },
+    Combine = {
+        default = "Combine Default",
+        sniper = "Combine Sniper",
+        shotgunner = "Combine Shotgunner",
+        elite = "Combine Elite",
+    },
+    Metrocop = {
+        metropolice = "Metrocop Default",
+        default = "Metrocop Default",
+    },
+}
+
+local function ResolveDefaultCoopPresetName(subClass, baseClass)
+    local classPresets = DEFAULT_COOP_PRESET_BY_CLASS[tostring(baseClass or "")]
+    if not istable(classPresets) then return nil end
+
+    local key = tostring(subClass or "default")
+    return classPresets[key] or classPresets.default
 end
 
 local function BuildRandomAttachmentProfile(wep)
@@ -913,7 +1192,7 @@ local function ApplyCoopLoadoutPreset(ply, presetName)
         return false, nil
     end
 
-    local preset = ZC_CoopLoadouts[presetName]
+    local preset = NormalizeCoopLoadoutPresetData(presetName, ZC_CoopLoadouts[presetName])
     local applied = false
     local givenWeapons = {}
 
@@ -936,7 +1215,6 @@ local function ApplyCoopLoadoutPreset(ply, presetName)
         end
     end
 
-    -- Give weapons
     if preset.weapons and istable(preset.weapons) then
         for _, weapon in ipairs(preset.weapons) do
             local resolved = ResolveRandom(weapon)
@@ -1002,6 +1280,7 @@ local function ApplyCoopLoadoutPreset(ply, presetName)
         end
     end
 
+
     if applied then
         ply:Give("weapon_hands_sh")
         ply:SelectWeapon("weapon_hands_sh")
@@ -1022,9 +1301,29 @@ end
 local function SelectCoopLoadoutPresetName(subClass, baseClass)
     local matching = {}
     local preferred = {}
+    local canonicalPresetName = ResolveDefaultCoopPresetName(subClass, baseClass)
+
+    if canonicalPresetName then
+        local canonicalPreset = NormalizeCoopLoadoutPresetData(canonicalPresetName, ZC_CoopLoadouts[canonicalPresetName])
+        if istable(canonicalPreset) and canonicalPreset.baseClass == baseClass and canonicalPreset.subclass == subClass then
+            if baseClass ~= "Gordon" or PresetHasConfiguredWeapons(canonicalPreset) then
+                return canonicalPresetName
+            end
+        end
+    end
 
     for presetName, preset in pairs(ZC_CoopLoadouts) do
-        if preset.baseClass == baseClass and preset.subclass == subClass then
+        local presetBaseClass = NormalizeCoopLoadoutBaseClass(
+            istable(preset) and (preset.baseClass or preset.className or preset.class or preset.PlayerClass or preset.playerClass) or nil,
+            presetName
+        )
+        local presetSubClass = NormalizeCoopLoadoutSubclass(
+            istable(preset) and (preset.subclass or preset.subClass or preset.SubClass or preset.role or preset.Role) or nil,
+            presetBaseClass,
+            presetName
+        )
+
+        if presetBaseClass == baseClass and presetSubClass == subClass then
             matching[#matching + 1] = presetName
             if baseClass ~= "Gordon" or PresetHasConfiguredWeapons(preset) then
                 preferred[#preferred + 1] = presetName
@@ -1034,8 +1333,10 @@ local function SelectCoopLoadoutPresetName(subClass, baseClass)
 
     -- If Gordon presets are present but empty, fall back to configured rebel
     -- presets so managed non-d1/d2 maps still grant useful loadouts.
+
     if baseClass == "Gordon" and #preferred == 0 then
         local gordonFallbacks = {
+            canonicalPresetName,
             "Gordon Default",
             "Rebel Default",
             "Rebel Assault",
@@ -1071,7 +1372,17 @@ end
 local function GetPresetsForClass(subClass, baseClass)
     local result = {}
     for presetName, preset in pairs(ZC_CoopLoadouts) do
-        if preset.baseClass == baseClass and preset.subclass == subClass then
+        local presetBaseClass = NormalizeCoopLoadoutBaseClass(
+            istable(preset) and (preset.baseClass or preset.className or preset.class or preset.PlayerClass or preset.playerClass) or nil,
+            presetName
+        )
+        local presetSubClass = NormalizeCoopLoadoutSubclass(
+            istable(preset) and (preset.subclass or preset.subClass or preset.SubClass or preset.role or preset.Role) or nil,
+            presetBaseClass,
+            presetName
+        )
+
+        if presetBaseClass == baseClass and presetSubClass == subClass then
             result[#result + 1] = presetName
         end
     end
@@ -1130,6 +1441,43 @@ local function ResolveCoopLoadoutContextForPlayer(ply)
     return nil, nil
 end
 
+local function ResolveCoopLoadoutContextFromClassName(className, subClass)
+    className = tostring(className or "")
+    if className == "Citizen" then
+        className = "Refugee"
+    end
+
+    subClass = tostring(subClass or "")
+    if subClass == "" then
+        subClass = "default"
+    end
+
+    if className == "Gordon" then
+        return "default", "Gordon", "Gordon"
+    end
+
+    if className == "Rebel" then
+        return subClass, "Rebel", "Rebel"
+    end
+
+    if className == "Refugee" then
+        return subClass, "Refugee", "Refugee"
+    end
+
+    if className == "Combine" then
+        return subClass, "Combine", "Combine"
+    end
+
+    if className == "Metrocop" then
+        if subClass == "default" then
+            subClass = "metropolice"
+        end
+        return subClass, "Metrocop", "Metrocop"
+    end
+
+    return nil, nil, className
+end
+
 -- ── Global Functions for Integration ──────────────────────────────────────────
 
 -- Apply a coop loadout to a player by preset name and subclass/class filters
@@ -1155,6 +1503,180 @@ local function IsCoopRoundActive()
     return string.lower(tostring(istable(zb) and zb.CROUND or "")) == "coop"
 end
 
+local function HasNonHandsWeapon(ply)
+    if not IsValid(ply) then return false end
+    for _, wep in ipairs(ply:GetWeapons()) do
+        if IsValid(wep) and wep:GetClass() ~= "weapon_hands_sh" then
+            return true
+        end
+    end
+    return false
+end
+
+local function TryApplyManagedGordonLoadout(ply)
+    if not IsValid(ply) or tostring(ply.PlayerClassName or "") ~= "Gordon" then
+        return false, nil
+    end
+
+    if not ShouldUseManagedGordonLoadout() then
+        return false, nil
+    end
+
+    local customApplied, appliedPresetName = false, nil
+    local cachedPresetName = tostring(ply.ZC_ManagedGordonPresetName or "")
+
+    if cachedPresetName ~= "" and istable(ZC_CoopLoadouts) and ZC_CoopLoadouts[cachedPresetName] and ZC_ApplyNamedCoopLoadout then
+        customApplied, appliedPresetName = ZC_ApplyNamedCoopLoadout(ply, cachedPresetName)
+    elseif ZC_ApplyCoopLoadout then
+        customApplied, appliedPresetName = ZC_ApplyCoopLoadout(ply, "default", "Gordon")
+    end
+
+    customApplied = customApplied == true
+
+    if (not customApplied) or (not HasNonHandsWeapon(ply)) then
+        local fallbacks = {
+            cachedPresetName,
+            "Gordon Default",
+            "Rebel Default",
+            "Rebel Assault",
+            "Refugee Default",
+        }
+
+        for _, fallbackName in ipairs(fallbacks) do
+            if fallbackName ~= "" and istable(ZC_CoopLoadouts) and ZC_CoopLoadouts[fallbackName] then
+                local ok, appliedName = ApplyCoopLoadoutPreset(ply, fallbackName)
+                if ok and HasNonHandsWeapon(ply) then
+                    customApplied = true
+                    appliedPresetName = appliedName or fallbackName
+                    break
+                end
+            end
+        end
+    end
+
+    if customApplied and isstring(appliedPresetName) and appliedPresetName ~= "" then
+        ply.ZC_ManagedGordonPresetName = appliedPresetName
+    end
+
+    local inv = ply:GetNetVar("Inventory", {})
+    inv["Weapons"] = { ["hg_sling"] = true, ["hg_flashlight"] = true }
+    ply:SetNetVar("Inventory", inv)
+
+    if IsValid(ply:GetWeapon("weapon_hands_sh")) then
+        ply:SelectWeapon("weapon_hands_sh")
+    end
+
+    return customApplied and HasNonHandsWeapon(ply), appliedPresetName
+end
+
+local function QueueManagedGordonLoadout(ply, attempt, maxAttempts)
+    if not IsValid(ply) or not ply:Alive() then return end
+
+    local ok = select(1, TryApplyManagedGordonLoadout(ply))
+    if ok then return end
+
+    attempt = attempt or 1
+    maxAttempts = maxAttempts or 12
+    if attempt >= maxAttempts then return end
+
+    timer.Simple(0.25, function()
+        QueueManagedGordonLoadout(ply, attempt + 1, maxAttempts)
+    end)
+end
+
+_G.ZC_EnsureManagedGordonLoadout = function(ply, delay, maxAttempts)
+    if not IsValid(ply) then return false end
+
+    timer.Simple(delay or 0, function()
+        if not IsValid(ply) then return end
+        QueueManagedGordonLoadout(ply, 1, maxAttempts or 12)
+    end)
+
+    return true
+end
+
+_G.ZC_ApplyCoopClassLoadout = function(ply, options)
+    if not IsValid(ply) then return false, nil end
+
+    options = options or {}
+
+    local requestedClass = tostring(options.className or ply.PlayerClassName or "")
+    local requestedSubClass = options.subClass
+    if requestedSubClass == nil then
+        requestedSubClass = ply.subClass
+    end
+
+    local subClassKey, baseClass, classToSet = ResolveCoopLoadoutContextFromClassName(requestedClass, requestedSubClass)
+    if not baseClass or classToSet == "" then return false, nil end
+
+    local preserveWeapons = options.preserveWeapons == true
+    local allowEmptyFallback = options.allowEmptyFallback ~= false
+    local skipNativeEquipment = options.skipNativeEquipment == true
+    local resolvedSubClass = (subClassKey ~= "default") and subClassKey or nil
+
+    if classToSet == "Gordon" then
+        local shouldManage = not options.forceNativeGordon and ShouldUseManagedGordonLoadout()
+        local playerEquipment = tostring(options.playerEquipment or options.equipment or "rebel")
+
+        if shouldManage then
+            ply:SetPlayerClass("Gordon", {
+                bRestored = options.bRestored == true,
+            })
+
+            local hasWeapons = HasNonHandsWeapon(ply)
+            if preserveWeapons and hasWeapons then
+                return true, "Gordon"
+            end
+
+            if preserveWeapons and not allowEmptyFallback then
+                return false, "Gordon"
+            end
+
+            local applied = select(1, TryApplyManagedGordonLoadout(ply)) == true
+            if not applied and options.queueManagedRetry ~= false and _G.ZC_EnsureManagedGordonLoadout then
+                _G.ZC_EnsureManagedGordonLoadout(ply, options.retryDelay or 0.1, options.maxAttempts or 12)
+            end
+
+            return applied or HasNonHandsWeapon(ply), "Gordon"
+        end
+
+        ply:SetPlayerClass("Gordon", {
+            equipment = playerEquipment,
+            bRestored = options.bRestored == true,
+        })
+        return true, "Gordon"
+    end
+
+    ply.subClass = resolvedSubClass
+    ply:SetPlayerClass(classToSet, { bNoEquipment = true })
+    ply.subClass = resolvedSubClass
+
+    if preserveWeapons and HasNonHandsWeapon(ply) then
+        return true, baseClass
+    end
+
+    if preserveWeapons and not allowEmptyFallback then
+        return false, baseClass
+    end
+
+    local customApplied = false
+    if _G.ZC_ApplyCoopLoadout then
+        customApplied = select(1, _G.ZC_ApplyCoopLoadout(ply, subClassKey, baseClass)) == true
+    end
+
+    if not customApplied and not skipNativeEquipment then
+        local ok, err = pcall(function()
+            ply:PlayerClassEvent("GiveEquipment", resolvedSubClass)
+        end)
+        if not ok then
+            print("[ZC CoopLoadouts] GiveEquipment fallback error for " .. tostring(ply:Nick()) .. ": " .. tostring(err))
+        end
+        customApplied = ok and HasNonHandsWeapon(ply)
+    end
+
+    return customApplied or HasNonHandsWeapon(ply), baseClass
+end
+
 -- Late spawn guard: some class/event paths can grant equipment after SetPlayerClass.
 -- Re-assert managed Gordon loadout and always ensure hands for all classes.
 hook.Add("Player Spawn", "ZC_CoopLoadouts_PostSpawnGuard", function(ply)
@@ -1174,6 +1696,7 @@ hook.Add("Player Spawn", "ZC_CoopLoadouts_PostSpawnGuard", function(ply)
             return
         end
 
+
         local subClass, baseClass = ResolveCoopLoadoutContextForPlayer(ply)
         if not subClass or not baseClass then
             if (attempt or 1) < 8 then
@@ -1188,48 +1711,16 @@ hook.Add("Player Spawn", "ZC_CoopLoadouts_PostSpawnGuard", function(ply)
 
         local customApplied, appliedPresetName = false, nil
         if isGordon then
-            local cachedPresetName = tostring(ply.ZC_ManagedGordonPresetName or "")
-            if cachedPresetName ~= "" and ZC_CoopLoadouts[cachedPresetName] and ZC_ApplyNamedCoopLoadout then
-                customApplied, appliedPresetName = ZC_ApplyNamedCoopLoadout(ply, cachedPresetName)
-            elseif ZC_ApplyCoopLoadout then
-                customApplied, appliedPresetName = ZC_ApplyCoopLoadout(ply, subClass, baseClass)
-                if isstring(appliedPresetName) and appliedPresetName ~= "" then
-                    ply.ZC_ManagedGordonPresetName = appliedPresetName
-                end
-            end
+            customApplied, appliedPresetName = TryApplyManagedGordonLoadout(ply)
         elseif ZC_ApplyCoopLoadout then
             customApplied, appliedPresetName = ZC_ApplyCoopLoadout(ply, subClass, baseClass)
         end
         customApplied = customApplied == true
 
-        if isGordon then
-            local appliedPreset = istable(ZC_CoopLoadouts) and ZC_CoopLoadouts[appliedPresetName] or nil
-            local preserveManagedWeapons = customApplied and PresetHasConfiguredWeapons(appliedPreset)
-
-            if not preserveManagedWeapons then
-                local toStrip = {}
-                for _, wep in ipairs(ply:GetWeapons()) do
-                    local wepClass = wep:GetClass()
-                    if wepClass ~= "weapon_hands_sh" then
-                        toStrip[#toStrip + 1] = wepClass
-                    end
-                end
-                for _, wepClass in ipairs(toStrip) do
-                    ply:StripWeapon(wepClass)
-                end
-            end
-
-            local inv = ply:GetNetVar("Inventory", {})
-            inv["Weapons"] = { ["hg_sling"] = true, ["hg_flashlight"] = true }
-            ply:SetNetVar("Inventory", inv)
-
-            print("[ZC CoopLoadouts] Gordon post-spawn guard: " .. ply:Nick() .. " (preset=" .. tostring(appliedPresetName) .. ", applied=" .. tostring(customApplied) .. ")")
-
-            if (attempt or 1) < 12 then
-                timer.Simple(0.25, function()
-                    RunPostSpawnGuard((attempt or 1) + 1)
-                end)
-            end
+        if (not customApplied or not HasNonHandsWeapon(ply)) and (attempt or 1) < 12 then
+            timer.Simple(0.25, function()
+                RunPostSpawnGuard((attempt or 1) + 1)
+            end)
         end
 
         if IsValid(ply:GetWeapon("weapon_hands_sh")) then
@@ -1271,47 +1762,7 @@ _G.ZC_SetCoopLoadout = function(presetName, data)
     if not presetName or not data then return false end
     if not istable(data) then return false end
 
-    -- Faction armor values (combine_armor, metrocop_armor, gordon_*) are applied
-    -- automatically by the playerclass system. Strip them from loadout armor so
-    -- they don't override or confuse the organism armor application.
-    local STRIP_ARMOR_VALUES = {
-        combine_armor=true, combine_helmet=true,
-        metrocop_armor=true, metrocop_helmet=true,
-        gordon_armor=true, gordon_helmet=true,
-        gordon_arm_armor_left=true, gordon_arm_armor_right=true,
-        gordon_leg_armor_left=true, gordon_leg_armor_right=true,
-        gordon_calf_armor_left=true, gordon_calf_armor_right=true,
-    }
-    local function SanitiseArmorTable(armorTbl)
-        if not istable(armorTbl) then return {} end
-        local out = {}
-        for slot, val in pairs(armorTbl) do
-            if istable(val) then
-                -- $random table: filter out blacklisted entries
-                local filtered = {}
-                for i, v in ipairs(val) do
-                    if i == 1 then filtered[1] = v  -- preserve "$random" sentinel
-                    elseif not STRIP_ARMOR_VALUES[tostring(v)] then
-                        filtered[#filtered+1] = v
-                    end
-                end
-                -- If only the sentinel remains, collapse to empty string
-                out[slot] = (#filtered <= 1) and "" or filtered
-            elseif isstring(val) then
-                out[slot] = STRIP_ARMOR_VALUES[val] and "" or val
-            else
-                out[slot] = val
-            end
-        end
-        return out
-    end
-
-    local clean = {
-        subclass = tostring(data.subclass or "default"),
-        baseClass = tostring(data.baseClass or "Rebel"),
-        weapons = istable(data.weapons) and data.weapons or {},
-        armor = SanitiseArmorTable(data.armor),
-    }
+    local clean = NormalizeCoopLoadoutPresetData(presetName, data)
 
     if istable(data.attachments) then
         clean.attachments = data.attachments

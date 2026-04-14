@@ -21,7 +21,7 @@ local function SeedFallbackCoopLoadouts(reason)
             subclass = "default",
             baseClass = "Rebel",
             weapons = {
-                {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osi_pr"},
+                {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osipr"},
                 {"$random", "weapon_m9beretta", "weapon_browninghp", "weapon_revolver357", "weapon_revolver2", "weapon_hk_usp", "weapon_glock17"},
                 "weapon_hg_hl2nade_tpik",
                 "weapon_melee",
@@ -49,7 +49,7 @@ local function SeedFallbackCoopLoadouts(reason)
                 "weapon_needle",
                 "weapon_betablock",
                 "weapon_adrenaline",
-                {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osi_pr"},
+                {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osipr"},
                 {"$random", "weapon_m9beretta", "weapon_browninghp", "weapon_revolver357", "weapon_revolver2", "weapon_hk_usp", "weapon_glock17"},
                 "weapon_melee",
                 "weapon_walkie_talkie",
@@ -223,11 +223,17 @@ local function SeedFallbackCoopLoadouts(reason)
         ["Gordon Default"] = {
             subclass = "default",
             baseClass = "Gordon",
-            weapons = {},
+            weapons = {
+                {"$random", "weapon_akm", "weapon_asval", "weapon_mp7", "weapon_spas12", "weapon_xm1014", "weapon_svd", "weapon_osipr"},
+                {"$random", "weapon_m9beretta", "weapon_browninghp", "weapon_revolver357", "weapon_revolver2", "weapon_hk_usp", "weapon_glock17"},
+                "weapon_hg_hl2nade_tpik",
+                "weapon_melee",
+                "weapon_walkie_talkie",
+            },
             armor = {
-                torso = "",
-                head = "",
-                face = "",
+                torso = {"$random", "vest5", "vest4", "vest1"},
+                head = {"$random", "helmet1", "helmet7"},
+                face = {"$random", "mask1", "mask3", "nightvision1", ""},
                 ears = "",
             }
         },

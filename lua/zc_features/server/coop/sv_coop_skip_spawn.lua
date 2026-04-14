@@ -16,6 +16,7 @@ local function CanonicalMapName(name)
 end
 
 local DATA_FILE = "zcity_skip_return.json"
+local DATA_FILE_BAK = "zcity_skip_return_bak.json"
 local FALLBACK_POS = Vector(0, 0, 0)
 local CLEAR_CVAR_NAME = "zc_town_clear_return_data"
 local RETURN_DEBUG_CVAR_NAME = "zc_town_return_debug"
@@ -34,10 +35,11 @@ local RETURN_SPAWN_OVERRIDE = {
 local activeTransition = nil
 local namedEntityPosCache = nil
 
--- Players who have already been repositioned this map load.
--- Cleared on InitPostEntity so each map load only repositions once per player.
-local repositionedPlayers = {}
-
+-- Global: lets sv_coop_respawn.lua know not to force-spawn players to the map
+-- start when we are in the return-from-Ravenholm phase.
+_G.ZC_IsReturnSpawnActive = function()
+    return activeTransition ~= nil
+end
 local returnDebug = ConVarExists(RETURN_DEBUG_CVAR_NAME)
     and GetConVar(RETURN_DEBUG_CVAR_NAME)
     or CreateConVar(RETURN_DEBUG_CVAR_NAME, "0", FCVAR_ARCHIVE, "Enable return payload debug prints for town_02 reposition flow.", 0, 1)
@@ -48,15 +50,18 @@ local function ReturnDbg(msg)
 end
 
 local function ReadSkipData()
-    if not file.Exists(DATA_FILE, "DATA") then return {} end
-    local raw = file.Read(DATA_FILE, "DATA")
-    if not raw or raw == "" then return {} end
-    local parsed = util.JSONToTable(raw)
+    local raw = file.Exists(DATA_FILE, "DATA") and file.Read(DATA_FILE, "DATA") or ""
+    if raw == "" or raw == "{}" then
+        raw = file.Exists(DATA_FILE_BAK, "DATA") and file.Read(DATA_FILE_BAK, "DATA") or ""
+    end
+    local parsed = raw ~= "" and util.JSONToTable(raw) or nil
     return istable(parsed) and parsed or {}
 end
 
 local function WriteSkipData(tbl)
-    file.Write(DATA_FILE, util.TableToJSON(tbl or {}, true) or "{}")
+    local js = util.TableToJSON(tbl or {}, true) or "{}"
+    file.Write(DATA_FILE, js)
+    file.Write(DATA_FILE_BAK, js)
 end
 
 local function IsTown02Map(mapName)
@@ -154,6 +159,15 @@ local function GetLandmarkPos(data)
 end
 
 local function PickSpawnNearLandmark(landmarkPos)
+    -- Allow admin zc_spawn_setstart overrides first (e.g., zc_spawn_setstart 1)
+    if _G.ZC_GetSavedStartSpawn then
+        local targetName = game.GetMap() .. "_1"
+        local overridePos = _G.ZC_GetSavedStartSpawn(targetName)
+        if overridePos then
+            return overridePos
+        end
+    end
+
     -- Check for a hardcoded ground-node override for this map first.
     local mapOverride = RETURN_SPAWN_OVERRIDE[CanonicalMapName(game.GetMap())]
     if mapOverride then
@@ -227,7 +241,17 @@ hook.Add("PlayerSpawn", "ZC_TransitionReturnSpawn", function(ply)
 
     timer.Simple(0.15, function()
         if not IsValid(ply) then return end
-        ply:SetPos(spawnPos)
+        
+        -- Override any competing spawn anchors from sv_coop_respawn
+        if _G.ZC_ApplyManagedSpawn then
+            _G.ZC_ApplyManagedSpawn(ply, spawnPos, nil, 2.5)
+        else
+            ply.ZC_ManagedSpawnUntil = nil
+            ply.ZC_ManagedSpawnPos = nil
+            ply.ZC_ManagedSpawnAng = nil
+            ply:SetPos(spawnPos)
+        end
+
         -- Force a client visibility refresh after delayed reposition.
         RequestClientPortalRefresh(ply)
         ReturnDbg("reposition " .. tostring(ply:Nick()) .. " to " .. tostring(spawnPos) .. " source=" .. tostring(skipData.sourceMap) .. " target=" .. tostring(skipData.targetMap))
@@ -299,8 +323,9 @@ timer.Create("ZC_SkipSpawn_ReturnWatchdog", 2, 0, function()
     if not IsTown02Map(game.GetMap()) then return end
     if not activeTransition then return end
 
-    local data = ReadSkipData()
-    if not IsReturnPayload(data) then
+    local raw = file.Exists(DATA_FILE, "DATA") and file.Read(DATA_FILE, "DATA") or ""
+    local parsed = raw ~= "" and util.JSONToTable(raw) or nil
+    if not IsReturnPayload(parsed) then
         ReturnDbg("watchdog detected missing payload; restoring")
         PersistActiveTransition()
     end

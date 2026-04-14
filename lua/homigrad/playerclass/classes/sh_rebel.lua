@@ -221,6 +221,16 @@ local function giveSubClassLoadout(ply, subClass)
     ply:Give("weapon_walkie_talkie")
 end
 
+local function TryApplyManagedCoopLoadout(ply, subClass)
+    if not IsValid(ply) or not _G.ZC_ApplyCoopLoadout or not CurrentRound then return false end
+
+    local round = CurrentRound()
+    if not istable(round) or string.lower(tostring(round.name or "")) ~= "coop" then return false end
+
+    local ok, applied = pcall(_G.ZC_ApplyCoopLoadout, ply, tostring(subClass or "default"), "Rebel")
+    return ok and applied == true
+end
+
 
 function CLASS.On(self, data)
     if CLIENT then return end
@@ -297,6 +307,11 @@ end
 
 function CLASS.GiveEquipment(self, subClass)
     local ply = self
+
+    if TryApplyManagedCoopLoadout(ply, subClass or "default") then
+        return
+    end
+
     local flashlight = self:Give("hg_flashlight")
     flashlight:Use(self)
 

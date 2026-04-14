@@ -70,47 +70,4 @@ hook.Add("Think", "ZC_CoopInit_svalyxinvincible_Late", function()
     Initialize()
 end)
 
--- ── Scene-actor loop guard ──────────────────────────────────────────────────
--- When a logic_choreographed_scene cannot find its actor NPC it fires
--- OnCanceled, which is usually wired to re-trigger the scene.  This creates
--- an infinite I/O loop that spams CSceneEntity errors and crashes the server.
--- After map init, find scene entities whose named actors are absent and
--- cancel them so the I/O chain is broken.
-local SCENE_ACTOR_GUARD_NAMES = {
-    "citizen_2_ct",
-}
-
-local function CancelOrphanedSceneEntities()
-    local missingActors = {}
-    for _, name in ipairs(SCENE_ACTOR_GUARD_NAMES) do
-        if #ents.FindByName(name) == 0 then
-            missingActors[name] = true
-        end
-    end
-    if not next(missingActors) then return end
-
-    local cancelled = 0
-    for _, scene in ipairs(ents.FindByClass("logic_choreographed_scene")) do
-        if not IsValid(scene) then continue end
-        -- Cancel the current run; this breaks the OnCanceled → relay → retrigger loop.
-        scene:Fire("Cancel", "", 0)
-        -- Disable the scene entirely so it cannot restart.
-        scene:Fire("Disable", "", 0)
-        cancelled = cancelled + 1
-    end
-
-    for name in pairs(missingActors) do
-        print("[DCityPatch] SceneActorGuard: actor '" .. name ..
-              "' not found — cancelled " .. cancelled .. " logic_choreographed_scene entities.")
-    end
-end
-
-hook.Add("InitPostEntity", "DCityPatch_SceneActorGuard", function()
-    -- Run after all map entities have had time to spawn and activate.
-    timer.Simple(2, CancelOrphanedSceneEntities)
-end)
-
-hook.Add("PostCleanupMap", "DCityPatch_SceneActorGuard", function()
-    timer.Simple(2, CancelOrphanedSceneEntities)
-end)
 

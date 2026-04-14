@@ -413,7 +413,19 @@ end)
 
 hook.Add("KeyRelease", "ZC_AmputeeBackCarry_CancelHold", function(ply, key)
     if key ~= IN_USE then return end
+
+    local pendingTarget = ply.ZCBackCarryPendingTarget
+    local shouldAttemptRevive = ply.ZCBackCarryPendingSince ~= nil and IsValid(pendingTarget) and not IsValid(ply.ZCBackCarryRagdoll)
+
     ClearPending(ply)
+
+    if shouldAttemptRevive and isfunction(_G.ZC_CoopTryReviveUse) then
+        _G.ZC_CoopTryReviveUse(ply, {
+            target = pendingTarget,
+            ignoreBackCarry = true,
+            silentTargetState = true,
+        })
+    end
 end)
 
 hook.Add("Think", "ZC_AmputeeBackCarry_Think", function()

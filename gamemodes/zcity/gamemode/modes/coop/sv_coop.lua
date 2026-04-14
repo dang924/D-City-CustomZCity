@@ -296,6 +296,46 @@ function MODE:GetTeamSpawn()
 end
 
 local clr_rebel, clr_medic, clr_grenadier = Color(255, 155, 0), Color(190, 0, 0), Color(190, 90, 0)
+
+local function ShouldUseManagedGordonLoadoutForCurrentMap()
+    if not _G.ZC_ShouldUseManagedGordonLoadout then return false end
+
+    local ok, managed = pcall(_G.ZC_ShouldUseManagedGordonLoadout)
+    return ok and managed == true
+end
+
+local function ApplyGordonClassForCurrentMap(ply, playerClass, options)
+    if not IsValid(ply) then return end
+    options = options or {}
+
+    if _G.ZC_ApplyCoopClassLoadout then
+        _G.ZC_ApplyCoopClassLoadout(ply, {
+            className = "Gordon",
+            playerEquipment = playerClass,
+            bRestored = options.bRestored == true,
+            queueManagedRetry = true,
+            retryDelay = 0.1,
+            maxAttempts = 12,
+        })
+        return
+    end
+
+    if ShouldUseManagedGordonLoadoutForCurrentMap() then
+        ply:SetPlayerClass("Gordon", {
+            bRestored = options.bRestored == true,
+        })
+        if _G.ZC_EnsureManagedGordonLoadout then
+            _G.ZC_EnsureManagedGordonLoadout(ply, 0.1, 12)
+        end
+        return
+    end
+
+    ply:SetPlayerClass("Gordon", {
+        equipment = playerClass,
+        bRestored = options.bRestored == true,
+    })
+end
+
 function MODE:GiveEquipment()
     self.COOPPoints = zb.GetMapPoints("HMCD_COOP_SPAWN")
     timer.Simple(0, function()
@@ -345,16 +385,19 @@ function MODE:GiveEquipment()
                     
                     
                     if savedPlayerClass == "Gordon" or savedRole == "Freeman" then
-                       
-                        ply:SetPlayerClass("Gordon", {bRestored = true})
+                        ApplyGordonClassForCurrentMap(ply, playerClass, { bRestored = true })
                         zb.GiveRole(ply, "Freeman", clr_rebel)
                         hasGordon = true
                     elseif savedSubClass == "medic" then
                         ply.subClass = "medic"
                         medicCount = medicCount + 1
-                        
-                        
-                        if savedPlayerClass == "Refugee" then
+
+                        if _G.ZC_ApplyCoopClassLoadout then
+                            _G.ZC_ApplyCoopClassLoadout(ply, {
+                                className = savedPlayerClass or "Rebel",
+                                subClass = "medic",
+                            })
+                        elseif savedPlayerClass == "Refugee" then
                             ply:SetPlayerClass("Refugee", {bNoEquipment = true})
                         else
                             ply:SetPlayerClass(savedPlayerClass or "Rebel", {bNoEquipment = true})
@@ -363,9 +406,13 @@ function MODE:GiveEquipment()
                     elseif savedSubClass == "grenadier" then
                         ply.subClass = "grenadier"
                         grenadierCount = grenadierCount + 1
-                        
-                        
-                        if savedPlayerClass == "Refugee" then
+
+                        if _G.ZC_ApplyCoopClassLoadout then
+                            _G.ZC_ApplyCoopClassLoadout(ply, {
+                                className = savedPlayerClass or "Rebel",
+                                subClass = "grenadier",
+                            })
+                        elseif savedPlayerClass == "Refugee" then
                             ply:SetPlayerClass("Refugee", {bNoEquipment = true})
                         else
                             ply:SetPlayerClass(savedPlayerClass or "Rebel", {bNoEquipment = true})
@@ -373,13 +420,21 @@ function MODE:GiveEquipment()
                         zb.GiveRole(ply, "Grenadier", clr_grenadier)
                     else
                         ply.subClass = nil
-                        
-                        
-                        if savedPlayerClass == "Refugee" then
+
+                        if _G.ZC_ApplyCoopClassLoadout then
+                            _G.ZC_ApplyCoopClassLoadout(ply, {
+                                className = savedPlayerClass or "Rebel",
+                                subClass = nil,
+                            })
+                        elseif savedPlayerClass == "Refugee" then
                             ply:SetPlayerClass("Refugee", {bNoEquipment = true})
-                            zb.GiveRole(ply, savedRole or "Refugee", savedRoleColor)
                         else
                             ply:SetPlayerClass(savedPlayerClass or "Rebel", {bNoEquipment = true})
+                        end
+
+                        if savedPlayerClass == "Refugee" then
+                            zb.GiveRole(ply, savedRole or "Refugee", savedRoleColor)
+                        else
                             zb.GiveRole(ply, savedRole or "Rebel", savedRoleColor)
                         end
                     end
@@ -423,22 +478,7 @@ function MODE:GiveDefaultEquipment(ply, playerClass, hasGordon, medicCount, maxM
     ply:SetNetVar("Inventory", inv)
 
     if not hasGordon and not ply:IsBot() and not savedGordonExists then
-        local mapName = string.lower(tostring(game.GetMap() or ""))
-        local useNativeMapEquipment = string.match(mapName, "^d1_") or string.match(mapName, "^d2_")
-
-        -- External managed-loadout systems can explicitly override this behavior.
-        if _G.ZC_ShouldUseManagedGordonLoadout then
-            local ok, managed = pcall(_G.ZC_ShouldUseManagedGordonLoadout)
-            if ok then
-                useNativeMapEquipment = not (managed == true)
-            end
-        end
-
-        if useNativeMapEquipment then
-            ply:SetPlayerClass("Gordon", {equipment = playerClass})
-        else
-            ply:SetPlayerClass("Gordon", {})
-        end
+        ApplyGordonClassForCurrentMap(ply, playerClass)
         zb.GiveRole(ply, "Freeman", clr_rebel)
         wasGordon = true
     else
@@ -466,7 +506,13 @@ function MODE:GiveDefaultEquipment(ply, playerClass, hasGordon, medicCount, maxM
             zb.GiveRole(ply, isMedic and "Medic" or "Rebel", isMedic and clr_medic or clr_rebel)
         end]]
 
-        if playerClass == "refugee" or playerClass == "citizen" then
+        if _G.ZC_ApplyCoopClassLoadout then
+            _G.ZC_ApplyCoopClassLoadout(ply, {
+                className = (playerClass == "refugee" or playerClass == "citizen") and "Refugee" or "Rebel",
+                subClass = isMedic and "medic" or (isGrenadier and "grenadier" or nil),
+                skipNativeEquipment = playerClass == "citizen",
+            })
+        elseif playerClass == "refugee" or playerClass == "citizen" then
             ply:SetPlayerClass("Refugee", {bNoEquipment = playerClass == "citizen"})
         elseif playerClass == "rebel" then
             ply:SetPlayerClass("Rebel")
@@ -594,16 +640,35 @@ local function PossessNPC(ply, npc)
                 zb.GiveRole(ply, "Metrocop", clr_metrocop)
             end
         elseif playerClass == "refugee" or playerClass == "citizen" then
-            ply:SetPlayerClass("Refugee", {bNoEquipment = playerClass == "citizen"})
+            if _G.ZC_ApplyCoopClassLoadout then
+                _G.ZC_ApplyCoopClassLoadout(ply, {
+                    className = "Refugee",
+                    skipNativeEquipment = playerClass == "citizen",
+                })
+            else
+                ply:SetPlayerClass("Refugee", {bNoEquipment = playerClass == "citizen"})
+            end
             zb.GiveRole(ply, "Refugee", clr_rebel)
         elseif playerClass == "rebel" then
-            ply:SetPlayerClass("Rebel")
+            if _G.ZC_ApplyCoopClassLoadout then
+                _G.ZC_ApplyCoopClassLoadout(ply, {
+                    className = "Rebel",
+                })
+            else
+                ply:SetPlayerClass("Rebel")
+            end
             zb.GiveRole(ply, "Rebel", clr_rebel)
 		elseif isZombie then
             ply:SetPlayerClass("headcrabzombie")
             zb.GiveRole(ply, "Zombie", clr_zombie)
         else
-            ply:SetPlayerClass("Rebel")
+            if _G.ZC_ApplyCoopClassLoadout then
+                _G.ZC_ApplyCoopClassLoadout(ply, {
+                    className = "Rebel",
+                })
+            else
+                ply:SetPlayerClass("Rebel")
+            end
             zb.GiveRole(ply, "Rebel", clr_rebel)
         end
         

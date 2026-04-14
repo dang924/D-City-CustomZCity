@@ -180,6 +180,13 @@ function CLASS.GiveEquipment(self, class)
     end
     
     local ply = self
+
+    if _G.ZC_ApplyCoopLoadout and currentRound and string.lower(tostring(currentRound.name or "")) == "coop" then
+        local ok, applied = pcall(_G.ZC_ApplyCoopLoadout, ply, tostring(class or "default"), "Refugee")
+        if ok and applied == true then
+            return
+        end
+    end
     
     local wep = ply:Give(primary[math.random(#primary)])
     ply:GiveAmmo(wep:GetMaxClip1() * 2, wep:GetPrimaryAmmoType(), true)

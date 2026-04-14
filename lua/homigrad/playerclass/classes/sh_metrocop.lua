@@ -129,6 +129,21 @@ local function giveSubClassLoadout(ply, subclass)
     end
 end
 
+local function TryApplyManagedCoopLoadout(ply, subClass)
+    if not IsValid(ply) or not _G.ZC_ApplyCoopLoadout or not CurrentRound then return false end
+
+    local round = CurrentRound()
+    if not istable(round) or string.lower(tostring(round.name or "")) ~= "coop" then return false end
+
+    local resolvedSubClass = tostring(subClass or "default")
+    if resolvedSubClass == "default" or resolvedSubClass == "" then
+        resolvedSubClass = "metropolice"
+    end
+
+    local ok, applied = pcall(_G.ZC_ApplyCoopLoadout, ply, resolvedSubClass, "Metrocop")
+    return ok and applied == true
+end
+
 function CLASS.On(self, data)
     if CLIENT then return end
 
@@ -166,7 +181,9 @@ function CLASS.On(self, data)
     self:SyncArmor()
 
     if not data.bNoEquipment then
-        giveSubClassLoadout(self, sub)
+        if not TryApplyManagedCoopLoadout(self, sub) then
+            giveSubClassLoadout(self, sub)
+        end
     end
 
     self.subClass = nil

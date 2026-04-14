@@ -23,18 +23,19 @@ local TOWN_ALLOWED_ROUTE = {
     d2_town_03 = "d2_town_02",
 }
 
+
+local function CanonicalMapName(name)
+    if not isstring(name) or name == "" then return "" end
+    if MapRoute.GetCanonicalMap then return MapRoute.GetCanonicalMap(name) end
+    return string.lower(name)
+end
+
 local function ShouldUseManagedGordonLoadoutLocal()
     local currentMap = CanonicalMapName(game.GetMap())
     if currentMap == "" then return true end
     if string.match(currentMap, "^d1_") then return false end
     if string.match(currentMap, "^d2_") then return false end
     return true
-end
-
-local function CanonicalMapName(name)
-    if not isstring(name) or name == "" then return "" end
-    if MapRoute.GetCanonicalMap then return MapRoute.GetCanonicalMap(name) end
-    return string.lower(name)
 end
 
 local function ResolveNextMapName(currentMap, fallbackTarget)
@@ -142,6 +143,7 @@ local function GetSavedStartSpawn(mapName)
 
     return pos, ang, entry
 end
+_G.ZC_GetSavedStartSpawn = GetSavedStartSpawn
 
 local function SetSavedStartSpawn(mapName, pos, ang, author)
     local key = GetStartSpawnMapKey(mapName)
@@ -313,7 +315,7 @@ end
 
 local ApplyManagedSpawn
 
-concommand.Add("zc_spawn_setstart", function(ply)
+concommand.Add("zc_spawn_setstart", function(ply, _, args)
     if not CanManageSpawnCommands(ply) then
         ReplySpawnCommand(ply, "[ZC Spawn] Admin access required.")
         return
@@ -324,14 +326,19 @@ concommand.Add("zc_spawn_setstart", function(ply)
         return
     end
 
+    local mapKey = game.GetMap()
+    if args and args[1] and args[1] ~= "" then
+        mapKey = mapKey .. "_" .. string.lower(args[1])
+    end
+
     local eyeAng = ply:EyeAngles()
     local spawnAng = Angle(0, eyeAng.y, 0)
-    if not SetSavedStartSpawn(game.GetMap(), ply:GetPos(), spawnAng, ply:Nick()) then
+    if not SetSavedStartSpawn(mapKey, ply:GetPos(), spawnAng, ply:Nick()) then
         ReplySpawnCommand(ply, "[ZC Spawn] Failed to save start spawn override.")
         return
     end
 
-    ReplySpawnCommand(ply, "[ZC Spawn] Saved start spawn for " .. game.GetMap() .. ": " .. FormatSpawnPoint(ply:GetPos(), spawnAng))
+    ReplySpawnCommand(ply, "[ZC Spawn] Saved start spawn for " .. mapKey .. ": " .. FormatSpawnPoint(ply:GetPos(), spawnAng))
 end)
 
 concommand.Add("zc_spawn_clearstart", function(ply, _, args)
@@ -692,7 +699,20 @@ local function Initialize()
             pick.subClass = nil
             pick.ZC_PickedRebelClass = nil
 
-            pick:SetPlayerClass("Gordon", GetNativeGordonClassData())
+            if ZC_ApplyCoopClassLoadout then
+                ZC_ApplyCoopClassLoadout(pick, {
+                    className = "Gordon",
+                    playerEquipment = tostring(GetPlayerClass() or "rebel"),
+                    queueManagedRetry = true,
+                    retryDelay = 0.1,
+                    maxAttempts = 12,
+                })
+            else
+                pick:SetPlayerClass("Gordon", GetNativeGordonClassData())
+                if ZC_ShouldUseManagedGordonLoadout and ZC_ShouldUseManagedGordonLoadout() == true and ZC_EnsureManagedGordonLoadout then
+                    ZC_EnsureManagedGordonLoadout(pick, 0.1, 12)
+                end
+            end
 
             if pick.ZC_ManagedSpawnPos then
                 ApplyManagedSpawn(pick, pick.ZC_ManagedSpawnPos, pick.ZC_ManagedSpawnAng, 2.5)
@@ -727,6 +747,9 @@ local function Initialize()
     -- This prevents random Gordon-relative offsets during round bootstrap.
     hook.Add("ZB_StartRound", "ZCity_ForceRoundStartSpawn", function()
         if not CurrentRound or CurrentRound().name ~= "coop" then return end
+        -- Do not force players to the map start when they are returning from a
+        -- Ravenholm detour; sv_coop_skip_spawn will reposition them instead.
+        if _G.ZC_IsReturnSpawnActive and _G.ZC_IsReturnSpawnActive() then return end
         local startPos, startAng = GetInfoPlayerStartPos()
         if not startPos then return end
 
@@ -1191,14 +1214,22 @@ local function Initialize()
                 classToSet = math.random() < 0.5 and "Rebel" or "Refugee"
             end
 
-            -- Set subClass BEFORE SetPlayerClass so ZCity's CLASS.On() reads it
-            -- and GiveEquipment runs the correct subclass loadout natively.
-            -- Never use bNoEquipment -- that skips all weapon and armor assignment.
             local subClass = AssignSubClass(ply)
             ply.subClass = (subClass == "default") and nil or subClass
 
             print("[ZC DEBUG]   timer.Simple(0): Setting class to '" .. classToSet .. "' subClass='" .. tostring(subClass) .. "'")
-            ply:SetPlayerClass(classToSet)
+            if ZC_ApplyCoopClassLoadout then
+                ZC_ApplyCoopClassLoadout(ply, {
+                    className = classToSet,
+                    subClass = (subClass == "default") and nil or subClass,
+                    skipNativeEquipment = mapClass == "citizen" and classToSet == "Refugee",
+                })
+            else
+                -- Set subClass BEFORE SetPlayerClass so ZCity's CLASS.On() reads it
+                -- and GiveEquipment runs the correct subclass loadout natively.
+                -- Never use bNoEquipment here in the fallback path.
+                ply:SetPlayerClass(classToSet)
+            end
             local currentClassName = tostring(ply.PlayerClassName or "")
             print("[ZC DEBUG]   -> after SetPlayerClass, class='" .. currentClassName .. "'")
 

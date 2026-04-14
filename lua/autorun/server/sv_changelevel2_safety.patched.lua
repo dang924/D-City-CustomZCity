@@ -26,35 +26,23 @@ local MANAGED_SOURCE_MAPS = {
 }
 
 local PINNED_TRIGGER_MINS = {
-    d1_town_02 = {
-        d1_town_03 = Vector(-3648, -448, -3528),
-        d1_town_02a = Vector(-3916, -680, -3288),
-        d1_town_02a_d = Vector(-3916, -680, -3288),
-    },
-    d1_town_03 = {
-        d1_town_02 = Vector(-3764, -68, -3408),
-    }
+    d1_town_02 = Vector(-3648, -448, -3528),
+    d1_town_03 = Vector(-3764, -68, -3408),
 }
 
 local PINNED_TRIGGER_POINTS = {
-    d1_town_02 = {
-        d1_town_03 = Vector(-3648, -448, -3528),
-    },
+    d1_town_02 = Vector(-3648, -448, -3528),
 }
 
 local SYNTHETIC_PROXY_BOUNDS = {
     d1_town_02 = {
-        d1_town_03 = {
-            center = Vector(-3648, -448, -3528),
-            halfExtents = Vector(192, 192, 160),
-        },
+        center = Vector(-3648, -448, -3528),
+        halfExtents = Vector(192, 192, 160),
     },
     d1_town_03 = {
-        d1_town_02 = {
-            -- forward exit out of Ravenholm (PINNED_TRIGGER_MINS position)
-            center = Vector(-3764, -68, -3408),
-            halfExtents = Vector(192, 192, 160),
-        },
+        -- forward exit out of Ravenholm (PINNED_TRIGGER_MINS position)
+        center = Vector(-3764, -68, -3408),
+        halfExtents = Vector(192, 192, 160),
     },
 }
 
@@ -76,7 +64,6 @@ local NEEDS_RETURN_SPAWN = {
 }
 
 local DATA_FILE = "zcity_skip_return.json"
-local DATA_FILE_BAK = "zcity_skip_return_bak.json"
 local transitionLocked = false
 local triggerProxies = {}
 local triggersDisabledThisMap = false
@@ -122,9 +109,6 @@ local function GetExpectedTownTargetCanonical(sourceCanonical)
 
     -- On the return pass (town_03 -> town_02), route town_02 to town_02a.
     local raw = file.Exists(DATA_FILE, "DATA") and file.Read(DATA_FILE, "DATA") or ""
-    if raw == "" or raw == "{}" then
-        raw = file.Exists(DATA_FILE_BAK, "DATA") and file.Read(DATA_FILE_BAK, "DATA") or ""
-    end
     local parsed = (raw ~= "") and util.JSONToTable(raw) or nil
     if not istable(parsed) then
         return expected
@@ -182,18 +166,15 @@ local function IsCoopLikeMap()
 end
 
 local function ReadTransitionData()
-    local raw = file.Exists(DATA_FILE, "DATA") and file.Read(DATA_FILE, "DATA") or ""
-    if raw == "" or raw == "{}" then
-        raw = file.Exists(DATA_FILE_BAK, "DATA") and file.Read(DATA_FILE_BAK, "DATA") or ""
-    end
-    local parsed = raw ~= "" and util.JSONToTable(raw) or nil
+    if not file.Exists(DATA_FILE, "DATA") then return {} end
+    local raw = file.Read(DATA_FILE, "DATA")
+    if not raw or raw == "" then return {} end
+    local parsed = util.JSONToTable(raw)
     return istable(parsed) and parsed or {}
 end
 
 local function WriteTransitionData(tbl)
-    local js = util.TableToJSON(tbl or {}, true) or "{}"
-    file.Write(DATA_FILE, js)
-    file.Write(DATA_FILE_BAK, js)
+    file.Write(DATA_FILE, util.TableToJSON(tbl or {}, true) or "{}")
 end
 
 local function GetLandmark(ent)
@@ -300,19 +281,16 @@ local function DisableNativeChangelevelTriggers()
     Dbg("Disabled native trigger_changelevel count=" .. tostring(disabledCount))
 end
 
-local function PickBestChangelevelTrigger(targetMap)
+local function PickBestChangelevelTrigger()
     local sourceMap = game.GetMap()
     if not IsManagedSourceMap(sourceMap) then return nil end
 
     local sourceCanonical = CanonicalMapName(sourceMap)
-    local targetCanonical = CanonicalMapName(targetMap)
 
-    local pinnedPointTab = PINNED_TRIGGER_POINTS[sourceCanonical] or {}
-    local pinnedPoint = pinnedPointTab[targetCanonical]
-    
+    local pinnedPoint = PINNED_TRIGGER_POINTS[sourceCanonical]
     if pinnedPoint then
         local bestByPoint, bestByPointDist = nil, math.huge
-        for _, ent in ipairs(ents.FindByClass("trigger_changelevel")) do  
+        for _, ent in ipairs(ents.FindByClass("trigger_changelevel")) do
             if not IsValid(ent) then continue end
             if not IsManagedTransition(sourceMap, ent.map) then continue end
 
@@ -333,11 +311,9 @@ local function PickBestChangelevelTrigger(targetMap)
         Dbg("Pinned-point trigger not found for " .. tostring(sourceCanonical))
     end
 
-    local pinnedMinsTab = PINNED_TRIGGER_MINS[sourceCanonical] or {}
-    local pinnedMins = pinnedMinsTab[targetCanonical]
-    
+    local pinnedMins = PINNED_TRIGGER_MINS[sourceCanonical]
     if pinnedMins then
-        for _, ent in ipairs(ents.FindByClass("trigger_changelevel")) do  
+        for _, ent in ipairs(ents.FindByClass("trigger_changelevel")) do
             if not IsValid(ent) then continue end
             if not IsManagedTransition(sourceMap, ent.map) then continue end
             local trMins, _ = ent:WorldSpaceAABB()
@@ -379,13 +355,8 @@ local function PickBestChangelevelTrigger(targetMap)
     return IsValid(best) and best or nil
 end
 
-local function GetSyntheticProxyBounds(sourceMap, targetMap)
-    local sourceCanonical = CanonicalMapName(sourceMap)
-    local targetCanonical = CanonicalMapName(targetMap)
-    
-    local cfgTab = SYNTHETIC_PROXY_BOUNDS[sourceCanonical] or {}
-    local cfg = cfgTab[targetCanonical]
-    
+local function GetSyntheticProxyBounds(sourceMap)
+    local cfg = SYNTHETIC_PROXY_BOUNDS[CanonicalMapName(sourceMap)]
     if not istable(cfg) then return nil, nil end
     if not cfg.center or not cfg.halfExtents then return nil, nil end
     return cfg.center - cfg.halfExtents, cfg.center + cfg.halfExtents
@@ -405,8 +376,8 @@ local function RebuildTriggerProxies()
         return false
     end
 
-    local tr = PickBestChangelevelTrigger(targetMap)
-    local mins, maxs = GetSyntheticProxyBounds(map, targetMap)
+    local tr = PickBestChangelevelTrigger()
+    local mins, maxs = GetSyntheticProxyBounds(map)
     local landmark = ""
 
     if mins and maxs then
@@ -527,6 +498,7 @@ local function FinalizeTownTransition(targetMap, landmark)
         RunConsoleCommand("changelevel", targetMap)
     end)
 end
+
 hook.Add("InitPostEntity", "ZC_Changelevel2Safety_Init", function()
     ResetTransitionState()
     timer.Simple(0, function()
@@ -644,7 +616,3 @@ concommand.Add("zc_town_rebuild", function(ply)
     EnsureLuaMapEndAndDisableNative("manual_rebuild")
     print("[ZC TownDbg] rebuild invoked on " .. tostring(game.GetMap()))
 end)
-
-
-
-
