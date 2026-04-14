@@ -454,7 +454,11 @@ local function ScheduleManagedApply(ply)
         timer.Simple(delay, function()
             if not IsValid(ply) or not ply:Alive() then return end
             if ply.ZC_CoopManagedSpawnSerial ~= serial then return end
-            ApplyManagedPresetForPlayer(ply)
+            local applied = ApplyManagedPresetForPlayer(ply)
+            if applied then
+                -- Cancel all remaining timers from this spawn by invalidating serial.
+                ply.ZC_CoopManagedSpawnSerial = serial + 1
+            end
         end)
     end
 end
