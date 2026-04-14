@@ -142,12 +142,12 @@ local function OpenDamageLog()
     closeBtn.DoClick = function() frame:Remove() end
 
     -- ── Search bar ────────────────────────────────────────────────────────────
-    local barY = 54
+    local barY = 72
     local searchBox = vgui.Create("DTextEntry", frame)
     searchBox:SetPos(14, barY)
     searchBox:SetSize(pw * 0.35, 28)
     searchBox:SetFont("ZCLog_Row")
-    searchBox:SetPlaceholderText("Search name or SteamID...")
+    searchBox:SetPlaceholderText("e.g. STEAM_0:0:12345 or playerName")
     searchBox:SetTextColor(C.text)
     searchBox:SetCursorColor(C.text)
     searchBox.Paint = function(self, w, h)
@@ -157,9 +157,36 @@ local function OpenDamageLog()
         self:DrawTextEntryText(C.text, C.accentB, C.text)
     end
 
+    local bx = 14 + pw * 0.35 + 8  -- base x after searchBox
+
+    -- Field labels drawn above each input
+    local labelsPanel = vgui.Create("DPanel", frame)
+    labelsPanel:SetPos(0, barY - 16)
+    labelsPanel:SetSize(pw, 14)
+    labelsPanel.Paint = function(self, w, h)
+        draw.SimpleText("NAME / STEAMID", "ZCLog_Small", 14,        h / 2, C.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText("WEAPON",         "ZCLog_Small", bx,         h / 2, C.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText("DATE",           "ZCLog_Small", bx + 128,   h / 2, C.dim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+
+    -- Weapon filter: client-side, filters already-loaded entries by weapon class
+    local weaponBox = vgui.Create("DTextEntry", frame)
+    weaponBox:SetPos(bx, barY)
+    weaponBox:SetSize(120, 28)
+    weaponBox:SetFont("ZCLog_Row")
+    weaponBox:SetPlaceholderText("Weapon class...")
+    weaponBox:SetTextColor(C.text)
+    weaponBox:SetCursorColor(C.text)
+    weaponBox.Paint = function(self, w, h)
+        draw.RoundedBox(4, 0, 0, w, h, C.panel)
+        surface.SetDrawColor(C.border)
+        surface.DrawOutlinedRect(0, 0, w, h, 1)
+        self:DrawTextEntryText(C.text, C.accentB, C.text)
+    end
+
     local dateBox = vgui.Create("DTextEntry", frame)
-    dateBox:SetPos(14 + pw * 0.35 + 8, barY)
-    dateBox:SetSize(120, 28)
+    dateBox:SetPos(bx + 128, barY)
+    dateBox:SetSize(100, 28)
     dateBox:SetFont("ZCLog_Row")
     dateBox:SetPlaceholderText(os.date("%Y-%m-%d"))
     dateBox:SetTextColor(C.text)
@@ -172,7 +199,7 @@ local function OpenDamageLog()
     end
 
     local searchBtn = vgui.Create("DButton", frame)
-    searchBtn:SetPos(14 + pw * 0.35 + 8 + 128, barY)
+    searchBtn:SetPos(bx + 128 + 108, barY)
     searchBtn:SetSize(80, 28)
     searchBtn:SetText("SEARCH")
     searchBtn:SetFont("ZCLog_Btn")
@@ -186,7 +213,7 @@ local function OpenDamageLog()
     end
 
     local todayBtn = vgui.Create("DButton", frame)
-    todayBtn:SetPos(14 + pw * 0.35 + 8 + 128 + 88, barY)
+    todayBtn:SetPos(bx + 128 + 108 + 88, barY)
     todayBtn:SetSize(60, 28)
     todayBtn:SetText("TODAY")
     todayBtn:SetFont("ZCLog_Btn")
@@ -199,6 +226,7 @@ local function OpenDamageLog()
     todayBtn.DoClick = function()
         dateBox:SetValue("")
         searchBox:SetValue("")
+        weaponBox:SetValue("")
         RequestLogs("", "")
     end
 
@@ -295,10 +323,22 @@ local function OpenDamageLog()
             child:Remove()
         end
 
-        local totalH = math.max(#logEntries * rowH, scrollH - 2)
+        -- Client-side weapon filter
+        local wepFilter = string.lower(string.Trim(weaponBox:GetValue()))
+        local visible = logEntries
+        if wepFilter ~= "" then
+            visible = {}
+            for _, e in ipairs(logEntries) do
+                if string.find(string.lower(e.weapon or ""), wepFilter, 1, true) then
+                    table.insert(visible, e)
+                end
+            end
+        end
+
+        local totalH = math.max(#visible * rowH, scrollH - 2)
         listPanel:SetTall(totalH)
 
-        for i, entry in ipairs(logEntries) do
+        for i, entry in ipairs(visible) do
             local y   = (i - 1) * rowH
             local row = vgui.Create("DPanel", listPanel)
             row:SetPos(0, y)
@@ -349,6 +389,9 @@ local function OpenDamageLog()
 
     -- Expose refresh
     frame.Refresh = function() BuildRows() end
+
+    -- Weapon box filters in real-time as the user types
+    weaponBox.OnChange = function() BuildRows() end
 
     BuildRows()
 

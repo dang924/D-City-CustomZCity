@@ -121,6 +121,14 @@ local DRUG_WEAPONS = {
 -- drugBuckets[attackerSteamID][victimSteamID] = { total, lastFlush, entry fields }
 local drugBuckets = {}
 
+-- First-dose morphine tracker: the HomigradDamage path in weapon_morphine only
+-- fires when owner.injectedinto[victim] > 1, so a single syringe (dose = 1.0)
+-- never crosses that threshold and is silently missed by the drug bucket above.
+-- This table records pairs whose first dose has already been logged so we log
+-- exactly once per pair then hand off to the drug-bucket for subsequent syringes.
+local MORPHINE_LOG_THRESHOLD = 0.5   -- fraction of a dose; 0.5 = half a syringe
+local morphineFirstDose = {}          -- [atkSID.."|"..vicSID] = true
+
 -- In-memory ring buffer for the live 30-minute feed
 local liveFeed    = {}
 local LIVE_WINDOW = 1800  -- seconds
@@ -334,6 +342,54 @@ timer.Create("ZCity_DamageLog_DrugFlushTimer", DRUG_FLUSH_INTERVAL * 2, 0, funct
             end
         end
         if not next(ab) then drugBuckets[atkSID] = nil end
+    end
+end)
+
+-- Sample every player's injectedinto table to catch the first morphine injection
+-- into another player. weapon_morphine only calls HomigradDamage once
+-- owner.injectedinto[victim] > 1, so a single full syringe (dose 1.0) never
+-- triggers the drug-bucket path above. Once morphineFirstDose[key] is set we
+-- stop watching that pair — subsequent syringes are handled by the drug bucket.
+timer.Create("ZCity_MorphineFirstDoseTracker", 0.5, 0, function()
+    for _, atk in ipairs(player.GetAll()) do
+        if not atk.injectedinto then continue end
+        local atkSID = atk:SteamID()
+        for vic, total in pairs(atk.injectedinto) do
+            -- Clean up stale entity references from the weapon's own table
+            if not IsValid(vic) then atk.injectedinto[vic] = nil continue end
+            if vic == atk then continue end
+
+            local key = atkSID .. "|" .. vic:SteamID()
+            if morphineFirstDose[key] then continue end      -- already logged
+            if total < MORPHINE_LOG_THRESHOLD then continue end -- too small to care
+
+            morphineFirstDose[key] = true
+            local entry = {
+                t        = CurTime(),
+                time     = os.date("%H:%M:%S"),
+                atkName  = atk:Nick(),
+                atkSteam = atkSID,
+                atkClass = atk.PlayerClassName or "?",
+                vicName  = vic:Nick(),
+                vicSteam = vic:SteamID(),
+                vicClass = vic.PlayerClassName or "?",
+                damage   = string.format("%.2f dose", total),
+                hitgroup = "injection",
+                weapon   = "morphine",
+            }
+            WriteEntry(entry)
+            table.insert(liveFeed, entry)
+            PruneLiveFeed()
+        end
+    end
+end)
+
+hook.Add("PlayerDisconnected", "ZCity_DamageLog_MorphineCleanup", function(ply)
+    if not IsValid(ply) then return end
+    local sid = ply:SteamID()
+    for key in pairs(morphineFirstDose) do
+        local a, v = string.match(key, "^(.+)|(.+)$")
+        if a == sid or v == sid then morphineFirstDose[key] = nil end
     end
 end)
 
