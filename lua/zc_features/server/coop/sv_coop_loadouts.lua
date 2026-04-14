@@ -1216,12 +1216,29 @@ local function ApplyCoopLoadoutPreset(ply, presetName)
     end
 
     if preset.weapons and istable(preset.weapons) then
+        -- Pre-count how many times each class appears so count-based weapons (grenades)
+        -- get their count set correctly. ply:Give() always resets count to 1, so we
+        -- give once and then set wep.count = N manually.
+        local classCount = {}
         for _, weapon in ipairs(preset.weapons) do
             local resolved = ResolveRandom(weapon)
             if resolved ~= "" then
+                classCount[resolved] = (classCount[resolved] or 0) + 1
+            end
+        end
+
+        local classGiven = {}
+        for _, weapon in ipairs(preset.weapons) do
+            local resolved = ResolveRandom(weapon)
+            if resolved ~= "" and not classGiven[resolved] then
+                classGiven[resolved] = true
                 local wep = ply:Give(resolved)
                 if IsValid(wep) then
                     givenWeapons[#givenWeapons + 1] = wep
+                    -- For count-based weapons (homigrad grenades) set count directly
+                    if wep.count ~= nil and classCount[resolved] > 1 then
+                        wep.count = classCount[resolved]
+                    end
                 end
                 applied = true
             end

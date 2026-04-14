@@ -379,12 +379,27 @@ local function ApplyPresetDirectly(ply, presetName)
     ply:SetNetVar("Inventory", inv)
     ply.inventory = inv
 
+    -- Pre-count duplicates so count-based weapons (grenades) get correct count.
+    local classCount = {}
     for i = 1, #preset.weapons do
         local resolved = ResolveRandomEntry(preset.weapons[i])
         if isstring(resolved) and resolved ~= "" then
+            classCount[resolved] = (classCount[resolved] or 0) + 1
+        end
+    end
+
+    local classGiven = {}
+    for i = 1, #preset.weapons do
+        local resolved = ResolveRandomEntry(preset.weapons[i])
+        if isstring(resolved) and resolved ~= "" and not classGiven[resolved] then
+            classGiven[resolved] = true
             local wep = ply:Give(resolved)
-            if IsValid(wep) and wep.GetMaxClip1 and wep:GetMaxClip1() and wep:GetMaxClip1() > 0 then
-                ply:GiveAmmo(wep:GetMaxClip1() * 3, wep:GetPrimaryAmmoType(), true)
+            if IsValid(wep) then
+                if wep.count ~= nil and classCount[resolved] > 1 then
+                    wep.count = classCount[resolved]
+                elseif wep.GetMaxClip1 and wep:GetMaxClip1() and wep:GetMaxClip1() > 0 then
+                    ply:GiveAmmo(wep:GetMaxClip1() * 3, wep:GetPrimaryAmmoType(), true)
+                end
             end
         end
     end
