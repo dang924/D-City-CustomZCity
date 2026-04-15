@@ -126,6 +126,7 @@ return {
     "autorun_server_sv_unlimited_consumables",
     "autorun_server_sv_vehicle_seat_switch_safety",
     "autorun_server_sv_vj_military_snpc_guard",
+    "autorun_server_sv_vj_snpc_relationships",
     "autorun_server_sv_vote_noclip",
     "autorun_server_sv_zcity_nil_guard_hotfix",
     "autorun_sh_sh_eyetrace_nil_guard",
