@@ -85,6 +85,37 @@ local function Initialize()
         ["npc_headcrab_black"]= 20,
     }
 
+    -- ── VJ Base SNPC kill rewards ─────────────────────────────────────────────────
+    -- Keyed by VJ_NPC_Class tag (lowercase). Only hostile classes are listed;
+    -- friendly classes (class_player_ally, class_citizen_*, class_vortigaunt) are
+    -- intentionally absent so they return nil and are never tracked or rewarded.
+    -- Amounts mirror the native equivalents above.
+    local VJ_CLASS_TIER_REWARDS = {
+        ["class_combine"]         = 200,
+        ["class_metropolice"]     = 100,
+        ["class_hunter"]          = 120,
+        ["class_stalker"]         = 35,
+        ["class_clawscanner"]     = 10,
+        ["class_scanner"]         = 10,
+        ["class_manhack"]         = 15,
+        ["class_combine_gunship"] = 200,
+    }
+
+    -- Returns the reward for a VJ Base SNPC based on its VJ_NPC_Class table,
+    -- or nil if the NPC has no hostile VJ class tag (and should not be rewarded).
+    local function GetVJClassReward(npc)
+        if not IsValid(npc) then return nil end
+        local vjClass = npc.VJ_NPC_Class
+        if not istable(vjClass) then return nil end
+        for _, cls in ipairs(vjClass) do
+            if isstring(cls) then
+                local r = VJ_CLASS_TIER_REWARDS[string.lower(cls)]
+                if r then return r end
+            end
+        end
+        return nil
+    end
+
     -- ── Shop item list ─────────────────────────────────────────────────────────────
     -- Prices are balanced against NPC rewards:
     --   Common soldier kill ($50)  ≈ 1 bandage or half a pistol
@@ -1013,10 +1044,10 @@ local function Initialize()
         return top
     end
 
-    local function AwardNPCRewardByIndex(npcIdx, npcClass, fallbackAttacker)
+    local function AwardNPCRewardByIndex(npcIdx, npcClass, fallbackAttacker, npcRef)
         if npcRewardPaid[npcIdx] then return end
 
-        local reward = NPC_REWARDS[npcClass]
+        local reward = NPC_REWARDS[npcClass] or (IsValid(npcRef) and GetVJClassReward(npcRef)) or nil
         if not reward or reward <= 0 then
             lastNPCAttacker[npcIdx] = nil
             npcDamageLedger[npcIdx] = nil
@@ -1082,8 +1113,8 @@ local function Initialize()
         end
         if not IsValid(npc) then return end
 
-        -- Only care about NPCs that have a reward defined
-        if not NPC_REWARDS[npc:GetClass()] then return end
+        -- Only care about NPCs that have a reward defined (native or VJ Base).
+        if not NPC_REWARDS[npc:GetClass()] and not GetVJClassReward(npc) then return end
 
         local attacker = ResolveRewardAttacker(dmgInfo)
         if not IsValid(attacker) then return end
@@ -1104,7 +1135,7 @@ local function Initialize()
             npc = victim.zc_npc_ref
         end
         if not IsValid(npc) then return end
-        if not NPC_REWARDS[npc:GetClass()] then return end
+        if not NPC_REWARDS[npc:GetClass()] and not GetVJClassReward(npc) then return end
 
         local attacker = ResolveRewardAttacker(dmgInfo)
         if not IsValid(attacker) then return end
@@ -1115,7 +1146,7 @@ local function Initialize()
 
     hook.Add("OnNPCKilled", "ZCity_BuyMenu_NPCReward", function(npc, attacker, inflictor)
         if not IsValid(npc) then return end
-        AwardNPCRewardByIndex(npc:EntIndex(), npc:GetClass(), attacker)
+        AwardNPCRewardByIndex(npc:EntIndex(), npc:GetClass(), attacker, npc)
     end)
 
     -- Clean up tracking table when an NPC is removed without dying
@@ -1128,8 +1159,8 @@ local function Initialize()
         local class = ent:GetClass()
 
         -- Fallback payout path for cases where scripted/forced NPC death skips OnNPCKilled.
-        if NPC_REWARDS[class] and not npcRewardPaid[idx] then
-            AwardNPCRewardByIndex(idx, class, lastNPCAttacker[idx])
+        if (NPC_REWARDS[class] or GetVJClassReward(ent)) and not npcRewardPaid[idx] then
+            AwardNPCRewardByIndex(idx, class, lastNPCAttacker[idx], ent)
         end
 
         lastNPCAttacker[idx] = nil
