@@ -21,16 +21,7 @@ local maxMorphine = 4
 local maxMedicine = 600
 local maxPower = 100
 
-local function IsCoopRoundActive()
-    if not CurrentRound then return false end
-
-    local round = CurrentRound()
-    return istable(round) and string.lower(tostring(round.name or "")) == "coop"
-end
-
 local function ShouldUseManagedCoopGordonLoadout()
-    if not IsCoopRoundActive() then return false end
-
     if _G.ZC_ShouldUseManagedGordonLoadout then
         local ok, managed = pcall(_G.ZC_ShouldUseManagedGordonLoadout)
         if ok then
@@ -38,7 +29,35 @@ local function ShouldUseManagedCoopGordonLoadout()
         end
     end
 
-    return false
+    local map = string.lower(tostring(game.GetMap() or ""))
+    if map == "" then return false end
+    if string.match(map, "^d1_") then return false end
+    if string.match(map, "^d2_") then return false end
+    return true
+end
+
+local function GetCanonicalCurrentMapName()
+    local mapName = string.lower(tostring(game.GetMap() or ""))
+    if mapName == "" then return "" end
+    if ZC_MapRoute and ZC_MapRoute.GetCanonicalMap then
+        return string.lower(tostring(ZC_MapRoute.GetCanonicalMap(mapName) or mapName))
+    end
+    return mapName
+end
+
+local function ShouldHardSetGordonHEV()
+    local canonical = GetCanonicalCurrentMapName()
+    if canonical == "" then return true end
+
+    -- Canon progression: Gordon should not be hard-HEV before trainstation_05.
+    if canonical == "d1_trainstation_01"
+        or canonical == "d1_trainstation_02"
+        or canonical == "d1_trainstation_03"
+        or canonical == "d1_trainstation_04" then
+        return false
+    end
+
+    return true
 end
 
 local function QueueManagedCoopGordonLoadout(ply)
@@ -67,6 +86,42 @@ local function hevchanged(ply)
     ply.organism.stamina.regen = 1 + 3 * hevpow
 end
 
+local function ForceGordonArmorSet(ply)
+    if not IsValid(ply) then return end
+    ply.armors = ply.armors or {}
+    ply.armors["torso"] = "gordon_armor"
+    ply.armors["head"] = "gordon_helmet"
+    ply:SetNetVar("HEVSuit", true)
+    if ply.SyncArmor then
+        pcall(function()
+            ply:SyncArmor()
+        end)
+    end
+end
+
+local function ClearGordonHEVState(ply)
+    if not IsValid(ply) then return end
+    ply:SetNetVar("HEVMedicine", nil)
+    ply:SetNetVar("HEVPower", nil)
+    ply:SetNetVar("HEVSuit", nil)
+    ply.HEV = nil
+    if ply.organism then
+        ply.organism.HEV = nil
+        ply.organism.CantCheckPulse = nil
+        ply.organism.recoilmul = 1
+        ply.organism.meleespeed = 1
+    end
+    if ply.armors then
+        ply.armors["torso"] = nil
+        ply.armors["head"] = nil
+        if ply.SyncArmor then
+            pcall(function()
+                ply:SyncArmor()
+            end)
+        end
+    end
+end
+
 local function createhev(ply)
     ply.organism.recoilmul = 0.2
     ply.organism.meleespeed = 2
@@ -83,10 +138,7 @@ local function createhev(ply)
     ply:SetBodygroup(2, 2)
 
     ply.organism.CantCheckPulse = true
-    ply.armors = {}
-    ply.armors["torso"] = "gordon_armor"
-    ply.armors["head"] = "gordon_helmet"
-    ply:SyncArmor()
+    ForceGordonArmorSet(ply)
     
     local Appearance = ply.CurAppearance or hg.Appearance.GetRandomAppearance()
     Appearance.AAttachments = ""
@@ -102,6 +154,7 @@ function CLASS.On(self, data)
     local equipment = data and data.equipment
     local bRestored = data and data.bRestored 
     local useManagedCoopLoadout = ShouldUseManagedCoopGordonLoadout()
+    local shouldHardSetHEV = ShouldHardSetGordonHEV()
     ApplyAppearance(self,nil,nil,nil,true)
     local Appearance = self.CurAppearance or hg.Appearance.GetRandomAppearance()
     Appearance.AAttachments = ""
@@ -144,7 +197,7 @@ function CLASS.On(self, data)
         end
     end
 
-    if equipment != "citizen" and not bRestored then
+    if shouldHardSetHEV and equipment != "citizen" and not bRestored then
         timer.Simple(1,function()
             for i,ent in pairs(ents.FindByClass("item_suit")) do
                 ent:Remove()
@@ -152,7 +205,7 @@ function CLASS.On(self, data)
         end)
 
         createhev(self)
-    elseif bRestored then
+    elseif shouldHardSetHEV and bRestored then
         if self.organism then
             self.organism.recoilmul = 0.2
             self.organism.meleespeed = 2
@@ -172,21 +225,23 @@ function CLASS.On(self, data)
         self:SetSubMaterial()
         self:SetBodygroup(2, 2)
         
-        self.armors = self.armors or {}
-        if not self.armors["torso"] then
-            self.armors["torso"] = "gordon_armor"
-        end
-        if not self.armors["head"] then
-            self.armors["head"] = "gordon_helmet"
-        end
-        self:SyncArmor()
+        ForceGordonArmorSet(self)
         hevchanged(self)
 
         --print("JOOOPAAAA")
+    else
+        ClearGordonHEVState(self)
     end
 
     if useManagedCoopLoadout then
         QueueManagedCoopGordonLoadout(self)
+    end
+
+    if shouldHardSetHEV then
+        timer.Simple(0.35, function()
+            if not IsValid(self) or self.PlayerClassName ~= "Gordon" then return end
+            ForceGordonArmorSet(self)
+        end)
     end
 end
 

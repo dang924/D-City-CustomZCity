@@ -276,18 +276,22 @@ local noOrganismNPCs = false
 
 -- ── Constants ─────────────────────────────────────────────────────────────────
 
-local MODES = { "rebel", "combine", "gordon" }
-local MODE_LABEL        = { rebel = "Rebel", combine = "Combine", gordon = "Gordon" }
+local MODES = { "rebel", "combine", "gordon", "other" }
+local MODE_LABEL        = { rebel = "Rebel", combine = "Combine", gordon = "Gordon", other = "Other Classes" }
 local MODE_BASE_CLASSES = {
     rebel   = { "Rebel", "Refugee" },
     combine = { "Combine", "Metrocop" },
     gordon  = { "Gordon" },
+    other   = {},
 }
 local MODE_SUBCLASSES = {
     rebel   = { "default", "medic", "sniper", "grenadier" },
     combine = { "default", "sniper", "shotgunner", "metropolice", "elite" },
     gordon  = { "default" },
+    other   = { "default" },
 }
+local CORE_FRONT_CLASSES = { "Gordon", "Rebel", "Refugee", "Combine", "Metrocop" }
+local CORE_CLASS_INDEX = { Gordon = 1, Rebel = 2, Refugee = 3, Combine = 4, Metrocop = 5 }
 local ARMOR_SLOTS = { "torso", "head", "face", "ears" }
 
 -- Populated from server via ZC_SendArmorList. Falls back to known defaults
@@ -298,6 +302,8 @@ local ARMOR_VALUES_BY_SLOT = {
     face  = { "", "mask1","mask2","mask3","mask4","nightvision1" },
     ears  = { "" },
 }
+
+local ARMOR_DISPLAY_NAMES = {}
 
 -- Faction armor that should never appear in the editor (applied by playerclass)
 local ARMOR_BLACKLIST = {
@@ -421,6 +427,70 @@ local function BuildArmorChoices(slot)
     return out
 end
 
+local function FallbackArmorDisplayName(key)
+    local text = tostring(key or "")
+    local out = string.NiceName(string.gsub(text, "_", " "))
+    if out == "" then
+        return tostring(key or "")
+    end
+    return out
+end
+
+local function GetArmorDisplayName(key)
+    key = tostring(key or "")
+    if key == "" then return "" end
+
+    local fromNet = ARMOR_DISPLAY_NAMES[key]
+    if isstring(fromNet) and string.Trim(fromNet) ~= "" then
+        return string.Trim(fromNet)
+    end
+
+    if hg and istable(hg.armorNames) then
+        local fromHG = hg.armorNames[key]
+        if isstring(fromHG) and string.Trim(fromHG) ~= "" then
+            local clean = string.Trim(fromHG)
+            ARMOR_DISPLAY_NAMES[key] = clean
+            return clean
+        end
+    end
+
+    return FallbackArmorDisplayName(key)
+end
+
+local function ArmorChoiceLabel(key)
+    if not isstring(key) or key == "" then return "<empty>" end
+    local name = GetArmorDisplayName(key)
+
+    if string.lower(name) == string.lower(key) then
+        return key
+    end
+    return string.format("%s [%s]", name, key)
+end
+
+local function ResolveArmorChoiceInput(rawText, slot, combo)
+    local text = string.Trim(tostring(rawText or ""))
+    if text == "" then return "" end
+    if text == "<empty>" then return "" end
+
+    if IsValid(combo) and istable(combo._choiceKeyByLabel) and isstring(combo._choiceKeyByLabel[text]) then
+        return combo._choiceKeyByLabel[text]
+    end
+
+    local bracketKey = string.match(text, "%[([^%[%]]+)%]%s*$")
+    if isstring(bracketKey) and bracketKey ~= "" then
+        return string.Trim(bracketKey)
+    end
+
+    local valid = BuildArmorChoices(slot)
+    for _, key in ipairs(valid) do
+        if key == text then
+            return key
+        end
+    end
+
+    return text
+end
+
 -- ── VGUI helpers ──────────────────────────────────────────────────────────────
 
 local function MakeBtn(parent, label, col, colHov, onClick)
@@ -494,16 +564,149 @@ end
 
 local PANEL = {}
 
+local function IsCoreBaseClass(name)
+    return CORE_CLASS_INDEX[tostring(name or "")] ~= nil
+end
+
+local function NormalizeBaseClassName(raw)
+    raw = string.Trim(tostring(raw or ""))
+    if raw == "" then return "" end
+
+    local key = string.lower(raw)
+    if key == "rebel" or key == "resistance" then return "Rebel" end
+    if key == "refugee" or key == "citizen" then return "Refugee" end
+    if key == "combine" or key == "overwatch" then return "Combine" end
+    if key == "metrocop" or key == "metropolice" or key == "civilprotection" or key == "civil_protection" then return "Metrocop" end
+    if key == "gordon" or key == "freeman" or key == "gordon freeman" then return "Gordon" end
+
+    local first = string.sub(raw, 1, 1)
+    return string.upper(first) .. string.sub(raw, 2)
+end
+
+local function CollectKnownBaseClasses()
+    local seen = {}
+    local ordered = {}
+
+    for _, c in ipairs(CORE_FRONT_CLASSES) do
+        seen[c] = true
+        ordered[#ordered + 1] = c
+    end
+
+    for _, preset in pairs(coopLoadouts or {}) do
+        local bc = NormalizeBaseClassName(istable(preset) and preset.baseClass or "")
+        if bc ~= "" and not seen[bc] then
+            seen[bc] = true
+            ordered[#ordered + 1] = bc
+        end
+    end
+
+    for _, modeClasses in pairs(MODE_BASE_CLASSES) do
+        for _, bc in ipairs(modeClasses or {}) do
+            local clean = NormalizeBaseClassName(bc)
+            if clean ~= "" and not seen[clean] then
+                seen[clean] = true
+                ordered[#ordered + 1] = clean
+            end
+        end
+    end
+
+    if istable(player) and istable(player.classList) then
+        for className in pairs(player.classList) do
+            local clean = NormalizeBaseClassName(className)
+            if clean ~= "" and not seen[clean] then
+                seen[clean] = true
+                ordered[#ordered + 1] = clean
+            end
+        end
+    end
+
+    local classFiles = file.Find("homigrad/playerclass/classes/sh_*.lua", "LUA") or {}
+    for _, fileName in ipairs(classFiles) do
+        local slug = string.match(string.lower(fileName), "^sh_([%w_]+)%.lua$")
+        if slug then
+            local clean = NormalizeBaseClassName(slug)
+            if clean ~= "" and not seen[clean] then
+                seen[clean] = true
+                ordered[#ordered + 1] = clean
+            end
+        end
+    end
+
+    table.sort(ordered, function(a, b)
+        local ra = CORE_CLASS_INDEX[a] or 999
+        local rb = CORE_CLASS_INDEX[b] or 999
+        if ra ~= rb then return ra < rb end
+        return string.lower(a) < string.lower(b)
+    end)
+
+    return ordered
+end
+
+local function GetModeBaseClasses(mode)
+    if mode == "other" then
+        local out = {}
+        for _, bc in ipairs(CollectKnownBaseClasses()) do
+            if not IsCoreBaseClass(bc) then
+                out[#out + 1] = bc
+            end
+        end
+        return out
+    end
+
+    return table.Copy(MODE_BASE_CLASSES[mode] or {})
+end
+
+local function GetModeSubclasses(mode)
+    if mode ~= "other" then
+        return table.Copy(MODE_SUBCLASSES[mode] or { "default" })
+    end
+
+    local seen = { default = true }
+    local out = { "default" }
+    local allowed = {}
+    for _, bc in ipairs(GetModeBaseClasses("other")) do
+        allowed[bc] = true
+    end
+
+    for _, preset in pairs(coopLoadouts or {}) do
+        local bc = string.Trim(tostring(istable(preset) and preset.baseClass or ""))
+        local sc = string.Trim(tostring(istable(preset) and preset.subclass or "default"))
+        if sc == "" then sc = "default" end
+        if allowed[bc] and not seen[sc] then
+            seen[sc] = true
+            out[#out + 1] = sc
+        end
+    end
+
+    table.sort(out, function(a, b)
+        if a == "default" then return true end
+        if b == "default" then return false end
+        return string.lower(a) < string.lower(b)
+    end)
+
+    return out
+end
+
 function PANEL:GetMode()    return self.ManagerMode or "rebel" end
 function PANEL:IsCombine()  return self:GetMode() == "combine" end
 function PANEL:IsGordon()   return self:GetMode() == "gordon"  end
 function PANEL:DefaultBase()
+    if self:GetMode() == "other" then
+        local classes = GetModeBaseClasses("other")
+        if #classes > 0 then return classes[1] end
+        return "Rebel"
+    end
     if self:IsCombine() then return "Combine" end
     if self:IsGordon()  then return "Gordon"  end
     return "Rebel"
 end
 function PANEL:IsAllowedBase(bc)
-    return table.HasValue(MODE_BASE_CLASSES[self:GetMode()] or {}, bc)
+    bc = tostring(bc or "")
+    local mode = self:GetMode()
+    if mode == "other" then
+        return bc ~= "" and not IsCoreBaseClass(bc)
+    end
+    return table.HasValue(GetModeBaseClasses(mode), bc)
 end
 
 -- ── Init ──────────────────────────────────────────────────────────────────────
@@ -539,7 +742,7 @@ function PANEL:Init()
         draw.RoundedBoxEx(5, 0, 0, w, 30, C.panelDark, true, true, false, false)
         surface.SetDrawColor(C.border)
         surface.DrawRect(0, 30, w, 1)
-        draw.SimpleText("  Manage Coop Loadouts", "DermaDefaultBold", 10, 15,
+        draw.SimpleText("  Manage Classes Loadouts", "DermaDefaultBold", 10, 15,
             C.textGold, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     end
 
@@ -622,7 +825,41 @@ function PANEL:SwitchTab(mode)
     self.ManagerMode = mode
     for m, pnl in pairs(self.TabPanels) do pnl:SetVisible(m == mode) end
     for m, btn in pairs(self.TabBtns)   do btn._active = (m == mode)  end
+    self:RefreshModeClassChoices(mode)
     self:RefreshLoadoutList()
+end
+
+function PANEL:RefreshModeClassChoices(mode)
+    local k = "_" .. tostring(mode or self:GetMode())
+    local sc = self["SubclassCombo" .. k]
+    local bc = self["BaseClassCombo" .. k]
+
+    local subclasses = GetModeSubclasses(mode)
+    local baseClasses = GetModeBaseClasses(mode)
+
+    if IsValid(sc) then
+        local selected = string.Trim(tostring(sc:GetValue() or "default"))
+        sc:Clear()
+        for _, sub in ipairs(subclasses) do
+            sc:AddChoice(sub)
+        end
+        if selected == "" or not table.HasValue(subclasses, selected) then
+            selected = "default"
+        end
+        sc:SetValue(selected)
+    end
+
+    if IsValid(bc) then
+        local selected = string.Trim(tostring(bc:GetValue() or ""))
+        bc:Clear()
+        for _, className in ipairs(baseClasses) do
+            bc:AddChoice(className)
+        end
+        if selected == "" or not table.HasValue(baseClasses, selected) then
+            selected = baseClasses[1] or self:DefaultBase()
+        end
+        bc:SetValue(selected)
+    end
 end
 
 -- ── BuildTabContent ───────────────────────────────────────────────────────────
@@ -720,7 +957,7 @@ function PANEL:BuildEditorSections(inner, mode, k)
 
     local scCombo = vgui.Create("DComboBox", irow2)
     scCombo:Dock(LEFT); scCombo:SetWide(140)
-    for _, sub in ipairs(MODE_SUBCLASSES[mode] or {}) do scCombo:AddChoice(sub) end
+    for _, sub in ipairs(GetModeSubclasses(mode)) do scCombo:AddChoice(sub) end
     scCombo:SetValue("default")
     frame["SubclassCombo"..k] = scCombo
 
@@ -730,8 +967,8 @@ function PANEL:BuildEditorSections(inner, mode, k)
 
     local bcCombo = vgui.Create("DComboBox", irow2)
     bcCombo:Dock(LEFT); bcCombo:SetWide(130)
-    for _, bc in ipairs(MODE_BASE_CLASSES[mode] or {}) do bcCombo:AddChoice(bc) end
-    bcCombo:SetValue(MODE_BASE_CLASSES[mode] and MODE_BASE_CLASSES[mode][1] or "")
+    for _, bc in ipairs(GetModeBaseClasses(mode)) do bcCombo:AddChoice(bc) end
+    bcCombo:SetValue(GetModeBaseClasses(mode)[1] or "")
     frame["BaseClassCombo"..k] = bcCombo
 
     CardSpacer(icard, 6)
@@ -783,7 +1020,7 @@ function PANEL:BuildEditorSections(inner, mode, k)
 
     -- ── Card: Slot Multipliers ─────────────────────────────────────────────────
 
-    if mode ~= "gordon" then
+    if mode == "rebel" or mode == "combine" then
         local slotDefs = (mode == "combine")
             and { {"sniper","Sniper"}, {"shotgunner","Shotgunner"}, {"metropolice","Metropolice"} }
             or  { {"medic","Medic"}, {"grenadier","Grenadier"} }
@@ -806,121 +1043,123 @@ function PANEL:BuildEditorSections(inner, mode, k)
 
     -- ── Card: Damage Scaling ──────────────────────────────────────────────────
 
-    local resistDefs
-    if mode == "combine" then
-        resistDefs = {
-            {"combinePlayerBase",       "P-Combine scale @ ref",       0,    2,    2},
-            {"combinePlayerPerPlayer",  "P-Combine Δ/player",         -0.25, 0.25, 3},
-            {"metrocopPlayerBase",      "P-Metrocop scale @ ref",      0,    2,    2},
-            {"metrocopPlayerPerPlayer", "P-Metrocop Δ/player",        -0.25, 0.25, 3},
-            {"combineNpcBase",          "NPC-Combine scale @ ref",     0,    2,    2},
-            {"combineNpcPerPlayer",     "NPC-Combine Δ/player",       -0.25, 0.25, 3},
-            {"metrocopNpcBase",         "NPC-Metrocop scale @ ref",    0,    2,    2},
-            {"metrocopNpcPerPlayer",    "NPC-Metrocop Δ/player",      -0.25, 0.25, 3},
-        }
-    elseif mode == "gordon" then
-        resistDefs = {
-            {"gordonBase",      "Gordon scale @ ref",  0,    2,    2},
-            {"gordonPerPlayer", "Gordon Δ/player",    -0.25, 0.25, 3},
-        }
-    else
-        resistDefs = {
-            {"rebelNpcBase",      "NPC-Rebel scale @ ref",  0,    2,    2},
-            {"rebelNpcPerPlayer", "NPC-Rebel Δ/player",    -0.25, 0.25, 3},
-        }
-    end
-
-    local allResist = {
-        {"referencePlayers", "Reference player count", 0, 64, 0},
-        {"minScale",         "Min damage scale",       0, 2,  2},
-        {"maxScale",         "Max damage scale",       0, 2,  2},
-    }
-    for _, v in ipairs(resistDefs) do allResist[#allResist+1] = v end
-
-    local rcard = MakeCard(inner, "Damage Scaling")
-    CardSpacer(rcard, 28)
-
-    local hintRow = MakeRow(rcard, 18, PAD)
-    local hintLbl = vgui.Create("DLabel", hintRow)
-    hintLbl:Dock(FILL)
-    hintLbl:SetText("scale = base + (players − ref) × Δ, clamped. Lower = tankier.")
-    hintLbl:SetTextColor(C.textDim)
-
-    local liveRow = MakeRow(rcard, 18, PAD)
-    local liveLbl = vgui.Create("DLabel", liveRow)
-    liveLbl:Dock(FILL)
-    liveLbl:SetText("Live: —")
-    liveLbl:SetTextColor(C.textLive)
-    frame["ResistLive"..k] = liveLbl
-
-    local rCtrl = self.ResistControls[mode]
-
-    for _, def in ipairs(allResist) do
-        local key, lbl, mn, mx, dec = def[1], def[2], def[3], def[4], def[5]
-        local srow = MakeRow(rcard, 30, PAD)
-        local slider = vgui.Create("DNumSlider", srow)
-        slider:Dock(FILL)
-        slider:SetText(lbl)
-        slider:SetMin(mn); slider:SetMax(mx); slider:SetDecimals(dec)
-        rCtrl[key] = slider
-    end
-    CardSpacer(rcard, 4)
-
-    -- Live updater
-    local function GetN()
-        local n = 0
-        for _, p in ipairs(player.GetAll()) do
-            if IsValid(p) and not (TEAM_SPECTATOR and p:Team() == TEAM_SPECTATOR) then n=n+1 end
-        end
-        return n
-    end
-    local function R(key, fb)
-        local s = rCtrl[key]
-        return (IsValid(s) and tonumber(s:GetValue())) or fb
-    end
-    local function Cl(v, a, b) return math.Clamp(v, math.min(a,b), math.max(a,b)) end
-    local function LS(base, delta, ref, n, mn2, mx2) return Cl(base+(n-ref)*delta, mn2, mx2) end
-
-    local function UpdateLive()
-        if not IsValid(liveLbl) then return end
-        local n   = GetN()
-        local ref = R("referencePlayers", resistanceConfig.referencePlayers)
-        local mn2 = R("minScale", resistanceConfig.minScale)
-        local mx2 = R("maxScale", resistanceConfig.maxScale)
+    if mode ~= "other" then
+        local resistDefs
         if mode == "combine" then
-            local cp  = LS(R("combinePlayerBase",  (resistanceConfig.combinePlayer  or{}).base or 0.2), R("combinePlayerPerPlayer",  (resistanceConfig.combinePlayer  or{}).perPlayer or 0), ref, n, mn2, mx2)
-            local mp  = LS(R("metrocopPlayerBase", (resistanceConfig.metrocopPlayer or{}).base or 0.2), R("metrocopPlayerPerPlayer", (resistanceConfig.metrocopPlayer or{}).perPlayer or 0), ref, n, mn2, mx2)
-            local cn  = LS(R("combineNpcBase",     (resistanceConfig.combineNpc     or{}).base or 0.2), R("combineNpcPerPlayer",     (resistanceConfig.combineNpc     or{}).perPlayer or 0), ref, n, mn2, mx2)
-            local mn3 = LS(R("metrocopNpcBase",    (resistanceConfig.metrocopNpc    or{}).base or 0.2), R("metrocopNpcPerPlayer",    (resistanceConfig.metrocopNpc    or{}).perPlayer or 0), ref, n, mn2, mx2)
-            liveLbl:SetText(string.format("Live @%d:  P-Combine=%.3f  P-Metro=%.3f  NPC-Combine=%.3f  NPC-Metro=%.3f", n,cp,mp,cn,mn3))
+            resistDefs = {
+                {"combinePlayerBase",       "P-Combine scale @ ref",       0,    2,    2},
+                {"combinePlayerPerPlayer",  "P-Combine Δ/player",         -0.25, 0.25, 3},
+                {"metrocopPlayerBase",      "P-Metrocop scale @ ref",      0,    2,    2},
+                {"metrocopPlayerPerPlayer", "P-Metrocop Δ/player",        -0.25, 0.25, 3},
+                {"combineNpcBase",          "NPC-Combine scale @ ref",     0,    2,    2},
+                {"combineNpcPerPlayer",     "NPC-Combine Δ/player",       -0.25, 0.25, 3},
+                {"metrocopNpcBase",         "NPC-Metrocop scale @ ref",    0,    2,    2},
+                {"metrocopNpcPerPlayer",    "NPC-Metrocop Δ/player",      -0.25, 0.25, 3},
+            }
         elseif mode == "gordon" then
-            local g = LS(R("gordonBase",(resistanceConfig.gordon or{}).base or 0.2), R("gordonPerPlayer",(resistanceConfig.gordon or{}).perPlayer or 0), ref, n, mn2, mx2)
-            liveLbl:SetText(string.format("Live @%d:  Gordon=%.3f", n, g))
+            resistDefs = {
+                {"gordonBase",      "Gordon scale @ ref",  0,    2,    2},
+                {"gordonPerPlayer", "Gordon Δ/player",    -0.25, 0.25, 3},
+            }
         else
-            local r = LS(R("rebelNpcBase",(resistanceConfig.rebelNpc or{}).base or 1), R("rebelNpcPerPlayer",(resistanceConfig.rebelNpc or{}).perPlayer or 0), ref, n, mn2, mx2)
-            liveLbl:SetText(string.format("Live @%d:  NPC-Rebels=%.3f", n, r))
+            resistDefs = {
+                {"rebelNpcBase",      "NPC-Rebel scale @ ref",  0,    2,    2},
+                {"rebelNpcPerPlayer", "NPC-Rebel Δ/player",    -0.25, 0.25, 3},
+            }
         end
-    end
-    self.LiveUpdaters[mode] = UpdateLive
 
-    for _, slider in pairs(rCtrl) do
-        if IsValid(slider) then
-            local ot = slider.Think
-            slider.Think = function(s)
-                if ot then ot(s) end
-                if s._lv ~= s:GetValue() then s._lv = s:GetValue(); UpdateLive() end
+        local allResist = {
+            {"referencePlayers", "Reference player count", 0, 64, 0},
+            {"minScale",         "Min damage scale",       0, 2,  2},
+            {"maxScale",         "Max damage scale",       0, 2,  2},
+        }
+        for _, v in ipairs(resistDefs) do allResist[#allResist+1] = v end
+
+        local rcard = MakeCard(inner, "Damage Scaling")
+        CardSpacer(rcard, 28)
+
+        local hintRow = MakeRow(rcard, 18, PAD)
+        local hintLbl = vgui.Create("DLabel", hintRow)
+        hintLbl:Dock(FILL)
+        hintLbl:SetText("scale = base + (players − ref) × Δ, clamped. Lower = tankier.")
+        hintLbl:SetTextColor(C.textDim)
+
+        local liveRow = MakeRow(rcard, 18, PAD)
+        local liveLbl = vgui.Create("DLabel", liveRow)
+        liveLbl:Dock(FILL)
+        liveLbl:SetText("Live: —")
+        liveLbl:SetTextColor(C.textLive)
+        frame["ResistLive"..k] = liveLbl
+
+        local rCtrl = self.ResistControls[mode]
+
+        for _, def in ipairs(allResist) do
+            local key, lbl, mn, mx, dec = def[1], def[2], def[3], def[4], def[5]
+            local srow = MakeRow(rcard, 30, PAD)
+            local slider = vgui.Create("DNumSlider", srow)
+            slider:Dock(FILL)
+            slider:SetText(lbl)
+            slider:SetMin(mn); slider:SetMax(mx); slider:SetDecimals(dec)
+            rCtrl[key] = slider
+        end
+        CardSpacer(rcard, 4)
+
+        -- Live updater
+        local function GetN()
+            local n = 0
+            for _, p in ipairs(player.GetAll()) do
+                if IsValid(p) and not (TEAM_SPECTATOR and p:Team() == TEAM_SPECTATOR) then n=n+1 end
+            end
+            return n
+        end
+        local function R(key, fb)
+            local s = rCtrl[key]
+            return (IsValid(s) and tonumber(s:GetValue())) or fb
+        end
+        local function Cl(v, a, b) return math.Clamp(v, math.min(a,b), math.max(a,b)) end
+        local function LS(base, delta, ref, n, mn2, mx2) return Cl(base+(n-ref)*delta, mn2, mx2) end
+
+        local function UpdateLive()
+            if not IsValid(liveLbl) then return end
+            local n   = GetN()
+            local ref = R("referencePlayers", resistanceConfig.referencePlayers)
+            local mn2 = R("minScale", resistanceConfig.minScale)
+            local mx2 = R("maxScale", resistanceConfig.maxScale)
+            if mode == "combine" then
+                local cp  = LS(R("combinePlayerBase",  (resistanceConfig.combinePlayer  or{}).base or 0.2), R("combinePlayerPerPlayer",  (resistanceConfig.combinePlayer  or{}).perPlayer or 0), ref, n, mn2, mx2)
+                local mp  = LS(R("metrocopPlayerBase", (resistanceConfig.metrocopPlayer or{}).base or 0.2), R("metrocopPlayerPerPlayer", (resistanceConfig.metrocopPlayer or{}).perPlayer or 0), ref, n, mn2, mx2)
+                local cn  = LS(R("combineNpcBase",     (resistanceConfig.combineNpc     or{}).base or 0.2), R("combineNpcPerPlayer",     (resistanceConfig.combineNpc     or{}).perPlayer or 0), ref, n, mn2, mx2)
+                local mn3 = LS(R("metrocopNpcBase",    (resistanceConfig.metrocopNpc    or{}).base or 0.2), R("metrocopNpcPerPlayer",    (resistanceConfig.metrocopNpc    or{}).perPlayer or 0), ref, n, mn2, mx2)
+                liveLbl:SetText(string.format("Live @%d:  P-Combine=%.3f  P-Metro=%.3f  NPC-Combine=%.3f  NPC-Metro=%.3f", n,cp,mp,cn,mn3))
+            elseif mode == "gordon" then
+                local g = LS(R("gordonBase",(resistanceConfig.gordon or{}).base or 0.2), R("gordonPerPlayer",(resistanceConfig.gordon or{}).perPlayer or 0), ref, n, mn2, mx2)
+                liveLbl:SetText(string.format("Live @%d:  Gordon=%.3f", n, g))
+            else
+                local r = LS(R("rebelNpcBase",(resistanceConfig.rebelNpc or{}).base or 1), R("rebelNpcPerPlayer",(resistanceConfig.rebelNpc or{}).perPlayer or 0), ref, n, mn2, mx2)
+                liveLbl:SetText(string.format("Live @%d:  NPC-Rebels=%.3f", n, r))
             end
         end
-    end
+        self.LiveUpdaters[mode] = UpdateLive
 
-    if not _G.ZC_LRC then _G.ZC_LRC = 0 end
-    _G.ZC_LRC = _G.ZC_LRC + 1
-    local tn = "ZC_LR_" .. mode .. "_" .. _G.ZC_LRC
-    timer.Create(tn, 3, 0, function()
-        if not IsValid(self) then timer.Remove(tn); return end
-        if self.ManagerMode == mode then UpdateLive() end
-    end)
-    self._liveTimers[#self._liveTimers+1] = tn
+        for _, slider in pairs(rCtrl) do
+            if IsValid(slider) then
+                local ot = slider.Think
+                slider.Think = function(s)
+                    if ot then ot(s) end
+                    if s._lv ~= s:GetValue() then s._lv = s:GetValue(); UpdateLive() end
+                end
+            end
+        end
+
+        if not _G.ZC_LRC then _G.ZC_LRC = 0 end
+        _G.ZC_LRC = _G.ZC_LRC + 1
+        local tn = "ZC_LR_" .. mode .. "_" .. _G.ZC_LRC
+        timer.Create(tn, 3, 0, function()
+            if not IsValid(self) then timer.Remove(tn); return end
+            if self.ManagerMode == mode then UpdateLive() end
+        end)
+        self._liveTimers[#self._liveTimers+1] = tn
+    end
 
     -- ── Card: Weapons ──────────────────────────────────────────────────────────
 
@@ -1051,45 +1290,56 @@ function PANEL:BuildEditorSections(inner, mode, k)
     end)
     editW:Dock(LEFT); editW:SetWide(90); editW:DockMargin(6, 0, 0, 0)
 
-    -- ── Card: Armor ────────────────────────────────────────────────────────────
+    if mode == "gordon" then
+        local infoCard = MakeCard(inner, "Armor")
+        CardSpacer(infoCard, 28)
+        local info = vgui.Create("DLabel", infoCard)
+        info:Dock(TOP)
+        info:DockMargin(PAD, 0, PAD, 8)
+        info:SetTall(22)
+        info:SetText("Gordon armor is fixed by class logic (HEV suit + helmet).")
+        info:SetTextColor(C.textSec)
+    else
+        -- ── Card: Armor ────────────────────────────────────────────────────────
 
-    local arcard = MakeCard(inner, "Armor")
-    CardSpacer(arcard, 28)
+        local arcard = MakeCard(inner, "Armor")
+        CardSpacer(arcard, 28)
 
-    local aList = vgui.Create("DListView", arcard)
-    aList:Dock(TOP)
-    aList:SetHeight(88)
-    aList:DockMargin(PAD, 0, PAD, 0)
-    aList:AddColumn("Slot"):SetWidth(90)
-    aList:AddColumn("Value"):SetWidth(-1)
-    aList:SetMultiSelect(false)
-    aList.DoDoubleClick = function(_, _, line) frame:EditArmorLine(line, k) end
-    frame["ArmorList"..k] = aList
+        local aList = vgui.Create("DListView", arcard)
+        aList:Dock(TOP)
+        aList:SetHeight(88)
+        aList:DockMargin(PAD, 0, PAD, 0)
+        aList:AddColumn("Slot"):SetWidth(90)
+        aList:AddColumn("Value"):SetWidth(-1)
+        aList:SetMultiSelect(false)
+        aList.DoDoubleClick = function(_, _, line) frame:EditArmorLine(line, k) end
+        frame["ArmorList"..k] = aList
 
-    local aBtnRow = MakeRow(arcard, 32, PAD)
-    aBtnRow:DockMargin(PAD, 4, PAD, 4)
+        local aBtnRow = MakeRow(arcard, 32, PAD)
+        aBtnRow:DockMargin(PAD, 4, PAD, 4)
 
-    local addA = MakeBtn(aBtnRow, "+ Add", C.green, C.greenHov, function()
-        frame:OpenArmorEditor(nil, k)
-    end)
-    addA:Dock(LEFT); addA:SetWide(90)
+        local addA = MakeBtn(aBtnRow, "+ Add", C.green, C.greenHov, function()
+            frame:OpenArmorEditor(nil, k)
+        end)
+        addA:Dock(LEFT); addA:SetWide(90)
 
-    local remA = MakeBtn(aBtnRow, "✕ Remove", C.red, C.redHov, function()
-        local list = frame["ArmorList"..k]
-        local row = IsValid(list) and list:GetSelectedLine()
-        if row then list:RemoveLine(row) end
-    end)
-    remA:Dock(LEFT); remA:SetWide(90); remA:DockMargin(6, 0, 0, 0)
+        local remA = MakeBtn(aBtnRow, "✕ Remove", C.red, C.redHov, function()
+            local list = frame["ArmorList"..k]
+            local row = IsValid(list) and list:GetSelectedLine()
+            if row then list:RemoveLine(row) end
+        end)
+        remA:Dock(LEFT); remA:SetWide(90); remA:DockMargin(6, 0, 0, 0)
 
-    local editA = MakeBtn(aBtnRow, "✎ Edit", C.steel, C.steelHov, function()
-        local list = frame["ArmorList"..k]
-        local idx = IsValid(list) and list:GetSelectedLine()
-        if not idx then return end
-        frame:EditArmorLine(list:GetLine(idx), k)
-    end)
-    editA:Dock(LEFT); editA:SetWide(90); editA:DockMargin(6, 0, 0, 0)
+        local editA = MakeBtn(aBtnRow, "✎ Edit", C.steel, C.steelHov, function()
+            local list = frame["ArmorList"..k]
+            local idx = IsValid(list) and list:GetSelectedLine()
+            if not idx then return end
+            frame:EditArmorLine(list:GetLine(idx), k)
+        end)
+        editA:Dock(LEFT); editA:SetWide(90); editA:DockMargin(6, 0, 0, 0)
 
-    CardSpacer(arcard, 4)
+        CardSpacer(arcard, 4)
+    end
 end
 
 -- ── RefreshLoadoutList ────────────────────────────────────────────────────────
@@ -1099,14 +1349,25 @@ function PANEL:RefreshLoadoutList()
     local lv   = self.ModeLists and self.ModeLists[mode]
     if not IsValid(lv) then return end
     lv:Clear()
-    local names = {}
+    local rows = {}
     for name, data in pairs(coopLoadouts) do
         if self:IsAllowedBase(data.baseClass or "") then
-            names[#names+1] = name
+            rows[#rows + 1] = {
+                name = name,
+                baseClass = tostring(data.baseClass or ""),
+            }
         end
     end
-    table.sort(names)
-    for _, n in ipairs(names) do lv:AddLine(n) end
+    table.sort(rows, function(a, b)
+        local ar = CORE_CLASS_INDEX[a.baseClass] or 999
+        local br = CORE_CLASS_INDEX[b.baseClass] or 999
+        if ar ~= br then return ar < br end
+        if a.baseClass ~= b.baseClass then
+            return string.lower(a.baseClass) < string.lower(b.baseClass)
+        end
+        return string.lower(a.name) < string.lower(b.name)
+    end)
+    for _, row in ipairs(rows) do lv:AddLine(row.name) end
 end
 
 -- ── LoadPreset ────────────────────────────────────────────────────────────────
@@ -1193,6 +1454,14 @@ function PANEL:SaveLoadout(k)
         armor     = armor,
     }
 
+    data.baseClass = NormalizeBaseClassName(data.baseClass)
+    if data.baseClass == "" then
+        data.baseClass = self:DefaultBase()
+    end
+    if self:GetMode() == "gordon" then
+        data.armor = {}
+    end
+
     -- Use JSON string instead of WriteTable to avoid numeric-key mangling.
     -- net.WriteTable turns {1="$random",2="weapon_ak"} (array) into
     -- string-keyed tables on the receiver, breaking $random resolution.
@@ -1238,7 +1507,7 @@ end
 -- ── SaveSlotModifiers ─────────────────────────────────────────────────────────
 
 function PANEL:SaveSlotModifiers(mode, silent)
-    if mode == "gordon" then return end
+    if mode ~= "rebel" and mode ~= "combine" then return end
     local payload = {
         rebel   = table.Copy(slotModifiers.rebel   or {}),
         combine = table.Copy(slotModifiers.combine or {}),
@@ -1331,8 +1600,12 @@ end
 function PANEL:SaveModeControls(mode)
     mode = mode or self:GetMode()
     self:SaveSlotModifiers(mode, true)
-    self:SaveResistanceConfig(true)
-    self:SaveKnockdownConfig(true)
+    if mode ~= "other" then
+        self:SaveResistanceConfig(true)
+    end
+    if mode == "rebel" then
+        self:SaveKnockdownConfig(true)
+    end
     self:SaveNoOrganismNPCs(noOrganismNPCs, true)
     chat.AddText(C.green, "[ZC] Controls saved.")
 end
@@ -1625,15 +1898,23 @@ function PANEL:OpenArmorEditor(existingLine, k)
 
     local function RefreshValues()
         valCombo:Clear()
+        valCombo._choiceKeyByLabel = {}
         for _, opt in ipairs(BuildArmorChoices(slotCombo:GetValue())) do
-            valCombo:AddChoice(opt == "" and "<empty>" or opt)
+            local label = ArmorChoiceLabel(opt)
+            valCombo:AddChoice(label, opt)
+            valCombo._choiceKeyByLabel[label] = opt
         end
     end
     slotCombo.OnSelect = function() RefreshValues() end
 
     if existingLine then
         slotCombo:SetValue(existingLine:GetColumnText(1))
-        valCombo:SetValue(ValueToDisplay(existingLine.RawValue or existingLine:GetColumnText(2)))
+        local existingValue = existingLine.RawValue or existingLine:GetColumnText(2)
+        if isstring(existingValue) then
+            valCombo:SetValue(ArmorChoiceLabel(existingValue))
+        else
+            valCombo:SetValue(ValueToDisplay(existingValue))
+        end
     else
         slotCombo:SetValue("torso")
     end
@@ -1687,7 +1968,7 @@ function PANEL:OpenArmorEditor(existingLine, k)
             cb._val = opt
             local lbl3 = vgui.Create("DLabel", aInner)
             lbl3:SetPos(24, y); lbl3:SetSize(innerW-30, ARH)
-            lbl3:SetText(opt=="" and "<empty>" or opt); lbl3:SetTextColor(C.textSec)
+            lbl3:SetText(ArmorChoiceLabel(opt)); lbl3:SetTextColor(C.textSec)
             aCBs[#aCBs+1] = cb
         end
     end
@@ -1730,6 +2011,7 @@ function PANEL:OpenArmorEditor(existingLine, k)
         else
             local rv = string.Trim(valCombo:GetValue() or "")
             if rv == "<empty>" then rv = "" end
+            rv = ResolveArmorChoiceInput(rv, slot, valCombo)
             parsed = ParseValueFromInput(rv)
         end
         if parsed == "" then
@@ -1793,7 +2075,13 @@ net.Receive("ZC_SendArmorList", function()
     -- Merge server list into ARMOR_VALUES_BY_SLOT.
     -- Server already filtered blacklisted keys; we prepend "" for the "no armor" option.
     for slot, keys in pairs(list) do
-        if istable(keys) then
+        if slot == "__displayNames" and istable(keys) then
+            for armorKey, displayName in pairs(keys) do
+                if isstring(armorKey) and isstring(displayName) and string.Trim(displayName) ~= "" then
+                    ARMOR_DISPLAY_NAMES[armorKey] = string.Trim(displayName)
+                end
+            end
+        elseif istable(keys) then
             local merged = { "" }  -- always first
             for _, key in ipairs(keys) do
                 if key ~= "" and not ARMOR_BLACKLIST[key] then
@@ -1807,7 +2095,7 @@ end)
 
 net.Receive("ZC_OpenCoopLoadoutMenu", function()
     local mode = string.lower(net.ReadString() or "rebel")
-    if mode ~= "combine" and mode ~= "gordon" then mode = "rebel" end
+    if mode ~= "combine" and mode ~= "gordon" and mode ~= "other" then mode = "rebel" end
     currentOpenMode = mode
 
     if IsValid(activeMenu) then activeMenu:Remove(); activeMenu = nil end
@@ -1908,6 +2196,9 @@ net.Receive("ZC_SendCoopLoadoutsEnd", function()
         print("[ZC CoopLoadouts] CLIENT: no active menu, data stored for next open")
         return
     end
+    for _, mode in ipairs(MODES) do
+        activeMenu:RefreshModeClassChoices(mode)
+    end
     activeMenu:RefreshLoadoutList()
     if activeMenu.CurrentPresetName and coopLoadouts[activeMenu.CurrentPresetName] then
         activeMenu:LoadPreset(activeMenu.CurrentPresetName)
@@ -1925,6 +2216,9 @@ net.Receive("ZC_SendCoopLoadouts", function()
         SeedFallbackCoopLoadouts("legacy-empty")
     end
     if not IsValid(activeMenu) then return end
+    for _, mode in ipairs(MODES) do
+        activeMenu:RefreshModeClassChoices(mode)
+    end
     activeMenu:RefreshLoadoutList()
     if activeMenu.CurrentPresetName and coopLoadouts[activeMenu.CurrentPresetName] then
         activeMenu:LoadPreset(activeMenu.CurrentPresetName)

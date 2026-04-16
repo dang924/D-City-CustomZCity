@@ -1205,13 +1205,13 @@ local function ApplyCoopLoadoutPreset(ply, presetName)
     inv["Weapons"] = { ["hg_sling"] = true, ["hg_flashlight"] = true }
     ply:SetNetVar("Inventory", inv)
 
-    if ply.armors and hg and hg.DropArmorForce then
+    if istable(ply.armors) then
+        -- Clear old armor silently on respawn; do not spawn dropped armor entities.
         for _, slot in ipairs(ARMOR_SLOTS) do
-            if ply.armors[slot] then
-                pcall(function()
-                    hg.DropArmorForce(ply, slot)
-                end)
-            end
+            ply.armors[slot] = nil
+        end
+        if pcall(function() return ply.SyncArmor end) and ply.SyncArmor then
+            pcall(function() ply:SyncArmor() end)
         end
     end
 
@@ -1220,23 +1220,25 @@ local function ApplyCoopLoadoutPreset(ply, presetName)
         -- get their count set correctly. ply:Give() always resets count to 1, so we
         -- give once and then set wep.count = N manually.
         local classCount = {}
+        local resolvedWeapons = {}
         for _, weapon in ipairs(preset.weapons) do
             local resolved = ResolveRandom(weapon)
             if resolved ~= "" then
+                resolvedWeapons[#resolvedWeapons + 1] = resolved
                 classCount[resolved] = (classCount[resolved] or 0) + 1
             end
         end
 
         local classGiven = {}
-        for _, weapon in ipairs(preset.weapons) do
-            local resolved = ResolveRandom(weapon)
+        for _, resolved in ipairs(resolvedWeapons) do
             if resolved ~= "" and not classGiven[resolved] then
                 classGiven[resolved] = true
                 local wep = ply:Give(resolved)
                 if IsValid(wep) then
                     givenWeapons[#givenWeapons + 1] = wep
                     -- For count-based weapons (homigrad grenades) set count directly
-                    if wep.count ~= nil and classCount[resolved] > 1 then
+                    local countForClass = tonumber(classCount[resolved]) or 0
+                    if wep.count ~= nil and countForClass > 1 then
                         wep.count = classCount[resolved]
                     end
                 end
@@ -1247,8 +1249,8 @@ local function ApplyCoopLoadoutPreset(ply, presetName)
 
     ApplyAttachmentsToFirstAttachableWeapon(ply, givenWeapons, preset.attachments)
 
-    -- Apply armor
-    if preset.armor and istable(preset.armor) then
+    -- Apply armor only when explicitly enabled for this preset.
+    if preset.autoArmor == true and preset.armor and istable(preset.armor) then
         local armor = preset.armor
 
         local function IsArmorAllowedForCurrentClass(armorClass)
