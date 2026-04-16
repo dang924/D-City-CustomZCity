@@ -222,10 +222,7 @@ local function giveSubClassLoadout(ply, subClass)
 end
 
 local function TryApplyManagedCoopLoadout(ply, subClass)
-    if not IsValid(ply) or not _G.ZC_ApplyCoopLoadout or not CurrentRound then return false end
-
-    local round = CurrentRound()
-    if not istable(round) or string.lower(tostring(round.name or "")) ~= "coop" then return false end
+    if not IsValid(ply) or not _G.ZC_ApplyCoopLoadout then return false end
 
     local ok, applied = pcall(_G.ZC_ApplyCoopLoadout, ply, tostring(subClass or "default"), "Rebel")
     return ok and applied == true

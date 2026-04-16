@@ -11,6 +11,7 @@ hg.TraitorLoot = {
 	["weapon_hg_rgd_tpik"] = 3,
 	["weapon_walkie_talkie"] = 2,
 	["weapon_adrenaline"] = 1,
+	["weapon_splint"] = 1,
 	["hg_flashlight"] = 1,
 }
 

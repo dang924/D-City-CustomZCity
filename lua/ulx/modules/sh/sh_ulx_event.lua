@@ -292,6 +292,7 @@ hook.Add("HG_PlayerSay", "ZC_EventMenu_ChatCommand", function(ply, txtTbl, text)
         ["!managerebel"]   = "rebel",  ["/managerebel"]   = "rebel",
         ["!managecombine"] = "combine",["/managecombine"] = "combine",
         ["!managegordon"]  = "gordon", ["/managegordon"]  = "gordon",
+        ["!manageother"]   = "other",  ["/manageother"]   = "other",
     })[cmd]
     if _manageMode then
         txtTbl[1] = ""
@@ -373,15 +374,15 @@ local function ulxManageClasses(calling_ply, mode)
         return
     end
     mode = string.lower(tostring(mode or "rebel"))
-    if mode ~= "combine" and mode ~= "gordon" then mode = "rebel" end
+    if mode ~= "combine" and mode ~= "gordon" and mode ~= "other" then mode = "rebel" end
     if SendCoopLoadoutMenuSafe(calling_ply, mode) then
         ulx.logString(calling_ply:Nick() .. " opened Coop Loadout Manager [" .. mode .. "]")
     end
 end
 local mcls = ulx.command(CATEGORY_NAME, "ulx manageclasses", ulxManageClasses, "!manageclasses")
-mcls:addParam{ type=ULib.cmds.StringArg, hint="rebel|combine|gordon", default="rebel" }
+mcls:addParam{ type=ULib.cmds.StringArg, hint="rebel|combine|gordon|other", default="rebel" }
 mcls:defaultAccess(ULib.ACCESS_SUPERADMIN)
-mcls:help("Opens the unified Coop Loadout Manager. Pass rebel/combine/gordon to start on that tab.")
+mcls:help("Opens the unified loadout manager. Pass rebel/combine/gordon/other to start on that tab.")
 
 -- ── Legacy command stubs (kept so existing muscle-memory / scripts still work) ─
 -- Each stub sends the corresponding net action so the new server handler runs it.

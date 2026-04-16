@@ -395,6 +395,7 @@ local function InferCoopLoadoutBaseClassFromName(presetName)
 end
 
 local function NormalizeCoopLoadoutBaseClass(value, presetName)
+    local raw = string.Trim(tostring(value or ""))
     local key = string.lower(string.Trim(tostring(value or "")))
     if key == "" then
         return InferCoopLoadoutBaseClassFromName(presetName)
@@ -406,7 +407,8 @@ local function NormalizeCoopLoadoutBaseClass(value, presetName)
     if key == "metrocop" or key == "metropolice" or key == "civil protection" or key == "civilprotection" then return "Metrocop" end
     if key == "gordon" or key == "freeman" or key == "gordon freeman" then return "Gordon" end
 
-    return InferCoopLoadoutBaseClassFromName(presetName)
+    -- Preserve unknown class names so manageclasses can target non-coop classes.
+    return raw ~= "" and raw or InferCoopLoadoutBaseClassFromName(presetName)
 end
 
 local function InferCoopLoadoutSubclassFromName(presetName, baseClass)
@@ -540,6 +542,87 @@ end
 local LOADOUTS_FILE = "zc_coop_loadouts.json"
 local LOADOUTS_FILE_BACKUP = "zc_coop_loadouts.backup.json"
 
+local CORE_CLASS_ORDER = {
+    Gordon = 1,
+    Rebel = 2,
+    Refugee = 3,
+    Combine = 3,
+    Metrocop = 4,
+}
+
+local function ToKnownBaseClass(raw)
+    raw = string.Trim(tostring(raw or ""))
+    if raw == "" then return "" end
+
+    local key = string.lower(raw)
+    if key == "rebel" or key == "resistance" then return "Rebel" end
+    if key == "refugee" or key == "refuge" or key == "citizen" then return "Refugee" end
+    if key == "combine" or key == "overwatch" then return "Combine" end
+    if key == "metrocop" or key == "metropolice" or key == "civilprotection" or key == "civil_protection" then return "Metrocop" end
+    if key == "gordon" or key == "freeman" then return "Gordon" end
+
+    return raw
+end
+
+local function GetDetectedPlayerClassNames()
+    local names = {}
+    local seen = {}
+
+    if istable(player) and istable(player.classList) then
+        for className in pairs(player.classList) do
+            if isstring(className) then
+                local clean = ToKnownBaseClass(className)
+                if clean ~= "" and not seen[clean] then
+                    seen[clean] = true
+                    names[#names + 1] = clean
+                end
+            end
+        end
+    end
+
+    -- Fallback: discover classes from shipped playerclass files.
+    local classFiles = file.Find("homigrad/playerclass/classes/sh_*.lua", "LUA") or {}
+    for _, fileName in ipairs(classFiles) do
+        local slug = string.match(string.lower(fileName), "^sh_([%w_]+)%.lua$")
+        if slug then
+            local mapped = ToKnownBaseClass(slug)
+            if mapped ~= "" and not seen[mapped] then
+                seen[mapped] = true
+                names[#names + 1] = mapped
+            end
+        end
+    end
+
+    table.sort(names, function(a, b)
+        local ra = CORE_CLASS_ORDER[a] or 999
+        local rb = CORE_CLASS_ORDER[b] or 999
+        if ra ~= rb then return ra < rb end
+        return string.lower(a) < string.lower(b)
+    end)
+
+    return names
+end
+
+local function EnsureDetectedClassDefaultLoadouts(target)
+    if not istable(target) then return false end
+
+    local changed = false
+    for _, className in ipairs(GetDetectedPlayerClassNames()) do
+        local presetName = className .. " Default"
+        if target[presetName] == nil then
+            target[presetName] = {
+                subclass = "default",
+                baseClass = className,
+                weapons = {},
+                armor = {},
+            }
+            changed = true
+        end
+    end
+
+    return changed
+end
+
 local function MergeMissingDefaults(target)
     local defaults = GetDefaultCoopLoadouts()
     if not istable(target) then return table.Copy(defaults) end
@@ -570,6 +653,11 @@ local function EnsureCoopLoadoutsPopulated()
         changed = true
     elseif after > before then
         print("[ZC CoopLoadouts] WARNING: missing built-in presets detected; restoring defaults")
+        changed = true
+    end
+
+    if EnsureDetectedClassDefaultLoadouts(ZC_CoopLoadouts) then
+        print("[ZC CoopLoadouts] Added detected playerclass default presets")
         changed = true
     end
 
@@ -687,9 +775,106 @@ local function InferMenuArmorSlot(key)
     return nil
 end
 
+local function FallbackArmorDisplayName(armorKey)
+    local words = string.Explode("_", tostring(armorKey or ""))
+    for i = 1, #words do
+        local w = words[i]
+        if w == "" then
+            words[i] = w
+        else
+            words[i] = string.upper(string.sub(w, 1, 1)) .. string.lower(string.sub(w, 2))
+        end
+    end
+    local pretty = string.Trim(table.concat(words, " "))
+    if pretty == "" then
+        return tostring(armorKey or "")
+    end
+    return pretty
+end
+
+local function GetArmorDisplayName(armorKey)
+    if not isstring(armorKey) or armorKey == "" then return "" end
+
+    if hg and istable(hg.armorNames) then
+        local fromNames = hg.armorNames[armorKey]
+        if isstring(fromNames) and string.Trim(fromNames) ~= "" then
+            return string.Trim(fromNames)
+        end
+    end
+
+    local armorRoot = hg and hg.armor
+    if istable(armorRoot) then
+        for _, slotTbl in pairs(armorRoot) do
+            if istable(slotTbl) and istable(slotTbl[armorKey]) then
+                local def = slotTbl[armorKey]
+                local candidate = def.name or def.title or def.printName or def.displayName
+                if isstring(candidate) and string.Trim(candidate) ~= "" then
+                    return string.Trim(candidate)
+                end
+            end
+        end
+    end
+
+    return FallbackArmorDisplayName(armorKey)
+end
+
+local function AddArmorKeysFromScriptFile(path, addKey, displayNames)
+    if not isstring(path) or path == "" then return end
+    local raw = nil
+    if file.Exists(path, "LUA") then
+        raw = file.Read(path, "LUA")
+    elseif file.Exists(path, "GAME") then
+        raw = file.Read(path, "GAME")
+    end
+    if not isstring(raw) or raw == "" then return end
+
+    local inArmorNames = false
+    local currentSlot = nil
+
+    for line in string.gmatch(raw, "[^\r\n]+") do
+        local slotStart = string.match(line, "^%s*hg%.armor%.([%w_]+)%s*=%s*{%s*$")
+        local startsArmorNames = string.match(line, "^%s*local%s+armorNames%s*=%s*{%s*$") ~= nil
+        local closesTable = string.match(line, "^%s*}%s*,?%s*$") ~= nil
+
+        if slotStart then
+            inArmorNames = false
+            currentSlot = string.lower(slotStart)
+        elseif startsArmorNames then
+            inArmorNames = true
+            currentSlot = nil
+        elseif closesTable then
+            currentSlot = nil
+            if inArmorNames then
+                inArmorNames = false
+            end
+        else
+            local armorKey = string.match(line, '%[%s*"([^"]+)"%s*%]%s*=')
+            if armorKey then
+                if currentSlot then
+                    local menuSlot = currentSlot
+                    if menuSlot ~= "torso" and menuSlot ~= "head" and menuSlot ~= "face" and menuSlot ~= "ears" then
+                        menuSlot = InferMenuArmorSlot(armorKey)
+                    end
+                    if menuSlot then
+                        addKey(menuSlot, armorKey)
+                    end
+                end
+
+                if inArmorNames and not displayNames[armorKey] then
+                    local label = string.match(line, '%]%s*=%s*"([^"]+)"')
+                    if isstring(label) and string.Trim(label) ~= "" then
+                        displayNames[armorKey] = string.Trim(label)
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function BuildArmorList()
     -- slot -> sorted list of armor key strings
     local result = {}
+    local displayNames = {}
     local seenBySlot = {}
     local function addKey(slot, armorKey)
         if not isstring(slot) or not isstring(armorKey) then return end
@@ -700,6 +885,9 @@ local function BuildArmorList()
         seenBySlot[slot][armorKey] = true
         result[slot] = result[slot] or {}
         result[slot][#result[slot] + 1] = armorKey
+        if not displayNames[armorKey] then
+            displayNames[armorKey] = GetArmorDisplayName(armorKey)
+        end
     end
 
     local armorRoot = hg and hg.armor
@@ -744,18 +932,37 @@ local function BuildArmorList()
         end
     end
 
+    -- Fallback discovery from script files so extended armor packs (e.g.
+    -- sh_armorstuff_new.lua) still populate editor choices even when their
+    -- runtime registration order is late.
+    local staticArmorFiles = {
+        "homigrad/sh_armorstuff_new.lua",
+        "homigrad/sh_armorstuff.lua",
+    }
+    for _, scriptPath in ipairs(staticArmorFiles) do
+        AddArmorKeysFromScriptFile(scriptPath, addKey, displayNames)
+    end
+
     -- Always ensure standard slots exist even if hg.armor doesn't cover them
     local STANDARD = { "torso", "head", "face", "ears" }
     for _, slot in ipairs(STANDARD) do
         if not result[slot] then result[slot] = {} end
-        table.sort(result[slot])
+        table.sort(result[slot], function(a, b)
+            local an = string.lower(displayNames[a] or a)
+            local bn = string.lower(displayNames[b] or b)
+            if an == bn then
+                return a < b
+            end
+            return an < bn
+        end)
     end
-    return result
+    return result, displayNames
 end
 
 local function SendArmorList(ply)
     if not IsValid(ply) then return end
-    local list = BuildArmorList()
+    local list, displayNames = BuildArmorList()
+    list.__displayNames = displayNames or {}
     local json = util.TableToJSON(list)
     net.Start("ZC_SendArmorList")
     net.WriteString(json)
@@ -1457,11 +1664,15 @@ local function ResolveCoopLoadoutContextForPlayer(ply)
         return subClass, "Metrocop"
     end
 
+    if className ~= "" then
+        return (subClass ~= "" and subClass or "default"), className
+    end
+
     return nil, nil
 end
 
 local function ResolveCoopLoadoutContextFromClassName(className, subClass)
-    className = tostring(className or "")
+    className = string.Trim(tostring(className or ""))
     if className == "Citizen" then
         className = "Refugee"
     end
@@ -1492,6 +1703,10 @@ local function ResolveCoopLoadoutContextFromClassName(className, subClass)
             subClass = "metropolice"
         end
         return subClass, "Metrocop", "Metrocop"
+    end
+
+    if className ~= "" then
+        return subClass, className, className
     end
 
     return nil, nil, className

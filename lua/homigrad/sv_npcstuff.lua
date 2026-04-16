@@ -7,6 +7,7 @@ local math_random, math_Rand = math.random, math.Rand
 			"weapon_hg_stunstick",
 			"weapon_medkit_sh",
 			"weapon_bandage_sh",
+			"weapon_splint",
 			"weapon_handcuffs",
 			"weapon_walkie_talkie"
 		},
@@ -14,11 +15,13 @@ local math_random, math_Rand = math.random, math.Rand
 			"weapon_melee",
 			"weapon_hg_hl2nade_tpik",
 			"weapon_bandage_sh",
+			"weapon_splint",
 			"weapon_handcuffs"
 		},
 		["npc_citizen"] = {
 			"weapon_smallconsumable",
 			"weapon_bandage_sh",
+			"weapon_splint",
 			"weapon_painkillers"
 		}
 	}

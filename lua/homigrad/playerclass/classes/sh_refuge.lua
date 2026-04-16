@@ -181,7 +181,7 @@ function CLASS.GiveEquipment(self, class)
     
     local ply = self
 
-    if _G.ZC_ApplyCoopLoadout and currentRound and string.lower(tostring(currentRound.name or "")) == "coop" then
+    if _G.ZC_ApplyCoopLoadout then
         local ok, applied = pcall(_G.ZC_ApplyCoopLoadout, ply, tostring(class or "default"), "Refugee")
         if ok and applied == true then
             return
