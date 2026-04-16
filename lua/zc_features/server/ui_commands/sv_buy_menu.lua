@@ -101,6 +101,9 @@ local function Initialize()
         ["class_combine_gunship"] = 200,
     }
 
+    local GetConfiguredNPCReward
+    local GetConfiguredVJClassReward
+
     -- Returns the reward for a VJ Base SNPC based on its VJ_NPC_Class table,
     -- or nil if the NPC has no hostile VJ class tag (and should not be rewarded).
     local function GetVJClassReward(npc)
@@ -498,7 +501,7 @@ local function Initialize()
         file.Write(KILL_REWARD_FILE, util.TableToJSON(RewardOverrides, true))
     end
 
-    local function GetConfiguredNPCReward(className)
+    function GetConfiguredNPCReward(className)
         local key = string.lower(tostring(className or ""))
         if key == "" then return nil end
         if RewardOverrides.npc[key] ~= nil then
@@ -507,7 +510,7 @@ local function Initialize()
         return NPC_REWARDS[key]
     end
 
-    local function GetConfiguredVJClassReward(className)
+    function GetConfiguredVJClassReward(className)
         local key = string.lower(tostring(className or ""))
         if key == "" then return nil end
         if RewardOverrides.vj[key] ~= nil then
