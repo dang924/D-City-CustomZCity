@@ -109,7 +109,7 @@ local function Initialize()
         if not istable(vjClass) then return nil end
         for _, cls in ipairs(vjClass) do
             if isstring(cls) then
-                local r = VJ_CLASS_TIER_REWARDS[string.lower(cls)]
+                local r = GetConfiguredVJClassReward(cls)
                 if r then return r end
             end
         end
@@ -375,7 +375,12 @@ local function Initialize()
     local RuntimeShopItems = {}
     local SHOP_PRICE_FILE = "zbattle/shop_prices.json"
     local SHOP_CUSTOM_FILE = "zbattle/shop_custom_entries.json"
+    local KILL_REWARD_FILE = "zbattle/kill_rewards.json"
     local PriceOverrides = {}
+    local RewardOverrides = {
+        npc = {},
+        vj = {},
+    }
     local ShopCustomData = {
         removed = {},
         manual = {},
@@ -447,6 +452,10 @@ local function Initialize()
         return IsValid(ply) and ply:IsAdmin()
     end
 
+    local function CanUseKillRewardEditor(ply)
+        return IsValid(ply) and ply:IsSuperAdmin()
+    end
+
     local function LoadPriceOverrides()
         local raw = file.Exists(SHOP_PRICE_FILE, "DATA") and file.Read(SHOP_PRICE_FILE, "DATA") or nil
         local parsed = isstring(raw) and util.JSONToTable(raw) or nil
@@ -456,6 +465,109 @@ local function Initialize()
     local function SavePriceOverrides()
         file.CreateDir("zbattle")
         file.Write(SHOP_PRICE_FILE, util.TableToJSON(PriceOverrides, true))
+    end
+
+    local function NormalizeRewardOverrideBucket(bucket)
+        local normalized = {}
+        if not istable(bucket) then return normalized end
+
+        for key, value in pairs(bucket) do
+            if not isstring(key) then continue end
+
+            local reward = tonumber(value)
+            if not reward then continue end
+
+            normalized[string.lower(key)] = math.Clamp(math.floor(reward), 0, 20000)
+        end
+
+        return normalized
+    end
+
+    local function LoadRewardOverrides()
+        local raw = file.Exists(KILL_REWARD_FILE, "DATA") and file.Read(KILL_REWARD_FILE, "DATA") or nil
+        local parsed = isstring(raw) and util.JSONToTable(raw) or nil
+
+        RewardOverrides = {
+            npc = NormalizeRewardOverrideBucket(istable(parsed) and parsed.npc or nil),
+            vj = NormalizeRewardOverrideBucket(istable(parsed) and parsed.vj or nil),
+        }
+    end
+
+    local function SaveRewardOverrides()
+        file.CreateDir("zbattle")
+        file.Write(KILL_REWARD_FILE, util.TableToJSON(RewardOverrides, true))
+    end
+
+    local function GetConfiguredNPCReward(className)
+        local key = string.lower(tostring(className or ""))
+        if key == "" then return nil end
+        if RewardOverrides.npc[key] ~= nil then
+            return RewardOverrides.npc[key]
+        end
+        return NPC_REWARDS[key]
+    end
+
+    local function GetConfiguredVJClassReward(className)
+        local key = string.lower(tostring(className or ""))
+        if key == "" then return nil end
+        if RewardOverrides.vj[key] ~= nil then
+            return RewardOverrides.vj[key]
+        end
+        return VJ_CLASS_TIER_REWARDS[key]
+    end
+
+    local function FormatRewardLabel(key, rewardType)
+        local label = tostring(key or "")
+        label = string.gsub(label, "^npc_", "")
+        label = string.gsub(label, "^class_", "")
+        label = string.gsub(label, "_", " ")
+        label = string.gsub(label, "(%a)([%w']*)", function(first, rest)
+            return string.upper(first) .. string.lower(rest)
+        end)
+
+        if rewardType == "vj" then
+            return "VJ " .. label
+        end
+
+        return label
+    end
+
+    local function BuildKillRewardCatalog()
+        LoadRewardOverrides()
+
+        local catalog = {}
+
+        for className, defaultReward in pairs(NPC_REWARDS) do
+            catalog[#catalog + 1] = {
+                label = FormatRewardLabel(className, "npc"),
+                key = className,
+                rewardType = "npc",
+                defaultReward = math.Clamp(math.floor(tonumber(defaultReward) or 0), 0, 20000),
+                currentReward = math.Clamp(math.floor(tonumber(GetConfiguredNPCReward(className)) or 0), 0, 20000),
+            }
+        end
+
+        for className, defaultReward in pairs(VJ_CLASS_TIER_REWARDS) do
+            catalog[#catalog + 1] = {
+                label = FormatRewardLabel(className, "vj"),
+                key = className,
+                rewardType = "vj",
+                defaultReward = math.Clamp(math.floor(tonumber(defaultReward) or 0), 0, 20000),
+                currentReward = math.Clamp(math.floor(tonumber(GetConfiguredVJClassReward(className)) or 0), 0, 20000),
+            }
+        end
+
+        table.sort(catalog, function(a, b)
+            if a.rewardType ~= b.rewardType then
+                return a.rewardType < b.rewardType
+            end
+            if a.label ~= b.label then
+                return a.label < b.label
+            end
+            return a.key < b.key
+        end)
+
+        return catalog
     end
 
     local function LoadShopCustomData()
@@ -724,6 +836,8 @@ local function Initialize()
         return inferred and NormalizeMenuCategory(inferred) or nil
     end
 
+    LoadRewardOverrides()
+
     local function InferPrice(itemType, category, wep)
         if itemType == "armor" then
             local prot = tonumber(wep and wep.protection) or 0
@@ -867,6 +981,7 @@ local function Initialize()
     util.AddNetworkString("ZC_BuyMenu_AdminSetCategory")
     util.AddNetworkString("ZC_BuyMenu_AdminRemoveEntry")
     util.AddNetworkString("ZC_BuyMenu_AdminAddEntry")
+    util.AddNetworkString("ZC_BuyMenu_AdminSetKillReward")
     util.AddNetworkString("ZC_BuyMenu_ForceAttach")
     util.AddNetworkString("ZC_BuyMenu_PostPurchaseRefresh")
 
@@ -906,6 +1021,7 @@ local function Initialize()
         if not IsValid(ply) then return end
 
         local items = BuildRuntimeShopItems()
+        local rewards = BuildKillRewardCatalog()
 
         net.Start("ZC_BuyMenu_ItemList")
             net.WriteUInt(#items, 16)
@@ -920,6 +1036,15 @@ local function Initialize()
             end
             net.WriteInt(GetMoney(ply), 32)
             net.WriteBool(CanUseShopEditor(ply))
+            net.WriteBool(CanUseKillRewardEditor(ply))
+            net.WriteUInt(#rewards, 16)
+            for _, reward in ipairs(rewards) do
+                net.WriteString(reward.label or "")
+                net.WriteString(reward.key or "")
+                net.WriteString(reward.rewardType or "npc")
+                net.WriteUInt(reward.defaultReward or 0, 16)
+                net.WriteUInt(reward.currentReward or 0, 16)
+            end
         net.Send(ply)
     end
 
@@ -1047,7 +1172,7 @@ local function Initialize()
     local function AwardNPCRewardByIndex(npcIdx, npcClass, fallbackAttacker, npcRef)
         if npcRewardPaid[npcIdx] then return end
 
-        local reward = NPC_REWARDS[npcClass] or (IsValid(npcRef) and GetVJClassReward(npcRef)) or nil
+        local reward = GetConfiguredNPCReward(npcClass) or (IsValid(npcRef) and GetVJClassReward(npcRef)) or nil
         if not reward or reward <= 0 then
             lastNPCAttacker[npcIdx] = nil
             npcDamageLedger[npcIdx] = nil
@@ -1114,7 +1239,7 @@ local function Initialize()
         if not IsValid(npc) then return end
 
         -- Only care about NPCs that have a reward defined (native or VJ Base).
-        if not NPC_REWARDS[npc:GetClass()] and not GetVJClassReward(npc) then return end
+        if not GetConfiguredNPCReward(npc:GetClass()) and not GetVJClassReward(npc) then return end
 
         local attacker = ResolveRewardAttacker(dmgInfo)
         if not IsValid(attacker) then return end
@@ -1135,7 +1260,7 @@ local function Initialize()
             npc = victim.zc_npc_ref
         end
         if not IsValid(npc) then return end
-        if not NPC_REWARDS[npc:GetClass()] and not GetVJClassReward(npc) then return end
+        if not GetConfiguredNPCReward(npc:GetClass()) and not GetVJClassReward(npc) then return end
 
         local attacker = ResolveRewardAttacker(dmgInfo)
         if not IsValid(attacker) then return end
@@ -1159,7 +1284,7 @@ local function Initialize()
         local class = ent:GetClass()
 
         -- Fallback payout path for cases where scripted/forced NPC death skips OnNPCKilled.
-        if (NPC_REWARDS[class] or GetVJClassReward(ent)) and not npcRewardPaid[idx] then
+        if (GetConfiguredNPCReward(class) or GetVJClassReward(ent)) and not npcRewardPaid[idx] then
             AwardNPCRewardByIndex(idx, class, lastNPCAttacker[idx], ent)
         end
 
@@ -1449,6 +1574,47 @@ local function Initialize()
         SaveShopCustomData()
         BuildRuntimeShopItems()
         ply:ChatPrint("[Shop] Added to menu: " .. (label ~= "" and label or className) .. " -> " .. category)
+        SendShopSnapshot(ply)
+    end)
+
+    net.Receive("ZC_BuyMenu_AdminSetKillReward", function(_, ply)
+        if not CanUseKillRewardEditor(ply) then return end
+
+        local rewardType = string.lower(tostring(net.ReadString() or ""))
+        local rewardKey = string.lower(tostring(net.ReadString() or ""))
+        local newReward = math.Clamp(net.ReadUInt(16), 0, 20000)
+
+        local defaults
+        local bucket
+        local resolvedReward
+
+        if rewardType == "npc" then
+            defaults = NPC_REWARDS
+            bucket = RewardOverrides.npc
+        elseif rewardType == "vj" then
+            defaults = VJ_CLASS_TIER_REWARDS
+            bucket = RewardOverrides.vj
+        else
+            return
+        end
+
+        if defaults[rewardKey] == nil then return end
+
+        if defaults[rewardKey] == newReward then
+            bucket[rewardKey] = nil
+        else
+            bucket[rewardKey] = newReward
+        end
+
+        SaveRewardOverrides()
+
+        if rewardType == "npc" then
+            resolvedReward = GetConfiguredNPCReward(rewardKey)
+        else
+            resolvedReward = GetConfiguredVJClassReward(rewardKey)
+        end
+
+        ply:ChatPrint("[Shop] Updated kill reward: " .. rewardKey .. " = $" .. tostring(resolvedReward or 0))
         SendShopSnapshot(ply)
     end)
 

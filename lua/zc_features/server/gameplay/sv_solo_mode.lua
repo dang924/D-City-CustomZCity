@@ -11,6 +11,9 @@
 
 if CLIENT then return end
 
+local cv_solo_mode = CreateConVar("zc_solo_mode", "1", FCVAR_ARCHIVE + FCVAR_NOTIFY,
+    "Enable ZCity solo mode (death restarts round, solo spawn menu). Set 0 to disable.")
+
 local SOLO_SPAWN_HOOKS = {
     "PlayerGiveSWEP",
     "PlayerSpawnEffect",
@@ -89,6 +92,7 @@ local function Initialize()
     local soloMode = false
 
     local function IsSoloMode()
+        if not cv_solo_mode:GetBool() then return false end
         return #player.GetHumans() <= 1
     end
 

@@ -11,6 +11,15 @@
 --
 -- NotTarget players are excluded from rebel lists and never assigned as
 -- enemy targets by either system.
+--
+-- Performance notes:
+--   • REL_THINK_INTERVAL is 0.2 s (not 0.1) — halves per-tick Lua overhead.
+--   • Cache rebuild uses one ents.GetAll() pass instead of N FindByClass calls.
+--   • zc_npc_lod_dist (default 4500 u): NPCs beyond this from all players have
+--     their enemy cleared and are skipped in the acquire loop, suppressing
+--     Source engine pathfinding + combat-AI overhead for out-of-range NPCs.
+--     Per-NPC LOD rechecks are staggered ~0.75 s apart so they don't spike
+--     on the same tick.
 
 if CLIENT then return end
 if not ZC_IsPatchRebelPlayer then
@@ -30,6 +39,7 @@ local SCRIPTED_MAPS = {
 -- That death triggers ZCity's ragdoll cleanup and can leave players stuck
 -- ragdolled or stuck upright.
 -- Manhacks and cscanners are also excluded — they physics-glitch on enemy clear.
+--
 local COMBINE_NPC_CLASSES = {
     "npc_combine_s",
     "npc_metropolice",
@@ -39,22 +49,47 @@ local COMBINE_NPC_CLASSES = {
     "npc_stalker",
 }
 
+-- Lookup set for the single ents.GetAll() cache pass (avoids N FindByClass calls).
+local COMBINE_CLASS_SET = {}
+for _, c in ipairs(COMBINE_NPC_CLASSES) do COMBINE_CLASS_SET[c] = true end
+
 local cachedCombine = {}   -- all Combine-faction NPCs
 local cacheTime     = 0
 local nextThinkRun  = 0
-local REL_THINK_INTERVAL = 0.1
-local CACHE_INTERVAL = 1
-local ACQUIRE_RETRY_INTERVAL_IDLE = 0.12
+local REL_THINK_INTERVAL          = 0.2   -- was 0.1; halved to cut per-tick Lua cost
+local CACHE_INTERVAL              = 1
+local ACQUIRE_RETRY_INTERVAL_IDLE   = 0.12
 local ACQUIRE_RETRY_INTERVAL_ACTIVE = 0.22
-local PUSH_MEMORY_INTERVAL = 0.25
-local ACQUIRE_MAX_DIST_SQR = 12000 * 12000
+local PUSH_MEMORY_INTERVAL        = 0.25
+local ACQUIRE_MAX_DIST_SQR        = 12000 * 12000
+
+-- Distance-based LOD: NPCs beyond this distance from all players have their enemy
+-- cleared and are skipped — Source engine stops running pathfinding + combat AI for them.
+-- Set to 0 to disable. Staggered per-NPC recheck at ~0.75 s prevents tick spikes.
+local cv_npc_lod = CreateConVar("zc_npc_lod_dist", "4500", FCVAR_ARCHIVE + FCVAR_NOTIFY,
+    "NPC combat LOD radius (units). NPCs beyond this from all players have enemies cleared. 0 = off.")
+
 local IS_SCRIPTED_MAP = SCRIPTED_MAPS[game.GetMap()] == true
 
-local acquireSortReb = {}
+local acquireSortReb  = {}
 local acquireSortDist = {}
+
+-- Pre-cached positions of all alive non-spectator players; rebuilt each Think tick
+-- so per-NPC LOD checks don't call player.GetAll() themselves.
+local cachedPlayerPos = {}
 
 local function IsNoTarget(ply)
     return ZC_NoTarget and ZC_NoTarget[ply:SteamID()] == true
+end
+
+-- Uses the pre-built cachedPlayerPos table (populated at the top of each Think tick).
+local function GetNearestPlayerDistSqr(pos)
+    local best = math.huge
+    for i = 1, #cachedPlayerPos do
+        local d = pos:DistToSqr(cachedPlayerPos[i])
+        if d < best then best = d end
+    end
+    return best
 end
 
 hook.Add("Think", "ZCity_NPCRelationships", function()
@@ -67,32 +102,37 @@ hook.Add("Think", "ZCity_NPCRelationships", function()
     if now < nextThinkRun then return end
     nextThinkRun = now + REL_THINK_INTERVAL
 
+    -- Single ents.GetAll() pass instead of N separate FindByClass calls.
     -- Keep cache refresh short so freshly spawned Combine acquire enemies fast.
     if now > cacheTime then
         cacheTime = now + CACHE_INTERVAL
         cachedCombine = {}
-        -- npc_metropolice is already listed in COMBINE_NPC_CLASSES (old extra scan removed).
-
-        for _, class in ipairs(COMBINE_NPC_CLASSES) do
-            for _, npc in ipairs(ents.FindByClass(class)) do
-                if IsValid(npc) then table.insert(cachedCombine, npc) end
+        for _, ent in ipairs(ents.GetAll()) do
+            if IsValid(ent) and ent:IsNPC() and COMBINE_CLASS_SET[ent:GetClass()] then
+                table.insert(cachedCombine, ent)
             end
         end
     end
 
-    -- Build rebel targets explicitly so Combine AI can reacquire even when
-    -- bullseye routing fails to hand off a valid hostile enemy.
+    -- Build rebel targets and pre-cache all alive player positions for LOD checks.
+    -- Both lists come from the same player.GetAll() pass to avoid a second iteration.
     local rebels = {}
+    cachedPlayerPos = {}
     for _, ply in ipairs(player.GetAll()) do
         if not IsValid(ply) then continue end
         if not ply:Alive() then continue end
         if ply:Team() == TEAM_SPECTATOR then continue end
+        cachedPlayerPos[#cachedPlayerPos + 1] = ply:GetPos()
         if IsNoTarget(ply) then continue end
         if not ZC_IsPatchRebelPlayer(ply) then continue end
         table.insert(rebels, ply)
     end
 
     if #rebels <= 0 then return end
+
+    -- Compute LOD threshold once for this tick.
+    local lodDist    = cv_npc_lod:GetFloat()
+    local lodDistSqr = lodDist > 0 and (lodDist * lodDist) or 0
 
     -- Conservative fix + fallback acquire:
     -- 1) clear direct friendly-fire targets
@@ -102,6 +142,24 @@ hook.Add("Think", "ZCity_NPCRelationships", function()
     for _, npc in ipairs(cachedCombine) do
         if not IsValid(npc) then continue end
         if npc.GetNPCState and npc:GetNPCState() == NPC_STATE_SCRIPT then continue end
+        if npc.ZC_KnockedDown then continue end
+
+        -- Distance-based LOD: stagger per-NPC recheck at ~0.75 s so not all
+        -- NPCs evaluate on the same tick. When LOD is active the NPC's enemy is
+        -- cleared and it is skipped below — Source stops pathfinding to the player.
+        if lodDistSqr > 0 and now >= (npc.ZC_NextLODCheck or 0) then
+            npc.ZC_NextLODCheck = now + 0.75 + math.Rand(0, 0.2)
+            if GetNearestPlayerDistSqr(npc:GetPos()) > lodDistSqr then
+                npc.ZC_LODActive = true
+                if IsValid(npc:GetEnemy()) then
+                    npc:ClearEnemyMemory()
+                    npc:SetEnemy(NULL)
+                end
+            else
+                npc.ZC_LODActive = nil
+            end
+        end
+        if npc.ZC_LODActive then continue end
 
         local shouldAcquire = false
 

@@ -72,6 +72,7 @@ local function SweepCorpses(reason)
     local removedRagdolls = 0
     local protectedRagdolls = 0
     local removedDeadNpc = 0
+    local removedDroppedWeapons = 0
     local protectedNpcComponents = 0
     local protectedSet = BuildProtectedRagdollSet()
 
@@ -135,12 +136,31 @@ local function SweepCorpses(reason)
         removedDeadNpc = removedDeadNpc + 1
     end
 
-    if removedRagdolls > 0 or removedDeadNpc > 0 then
+    -- Remove dropped floor weapons, but keep physcannon intact.
+    for _, ent in ipairs(ents.FindByClass("weapon_*")) do
+        if not IsValid(ent) or not ent:IsWeapon() then continue end
+
+        local className = string.lower(tostring(ent:GetClass() or ""))
+        if className == "weapon_physcannon" then continue end
+
+        -- Keep map-authored pickups and anything still attached/owned.
+        if ent.MapCreationID and ent:MapCreationID() ~= -1 then continue end
+        if IsValid(ent:GetParent()) then continue end
+
+        local owner = ent.GetOwner and ent:GetOwner() or nil
+        if IsValid(owner) then continue end
+
+        ent:Remove()
+        removedDroppedWeapons = removedDroppedWeapons + 1
+    end
+
+    if removedRagdolls > 0 or removedDeadNpc > 0 or removedDroppedWeapons > 0 then
         print(string.format(
-            "[ZC corpse sweep] %s | removed ragdolls=%d dead_npc=%d protected_living_ragdolls=%d protected_npc_components=%d",
+            "[ZC corpse sweep] %s | removed ragdolls=%d dead_npc=%d dropped_weapons=%d protected_living_ragdolls=%d protected_npc_components=%d",
             tostring(reason or "timer"),
             removedRagdolls,
             removedDeadNpc,
+            removedDroppedWeapons,
             protectedRagdolls,
             protectedNpcComponents
         ))

@@ -2,11 +2,14 @@
 -- Opens a shop panel when the server sends ZC_BuyMenu_Open.
 
 local shopItems   = {}
+local killRewards = {}
 local playerMoney = 0
 local shopFrame   = nil
 local canEditPrices = false
+local canEditKillRewards = false
 local sortAscending = false  -- false = high-to-low (default), true = low-to-high
 local activePriceEditorRebuild = nil
+local activeRewardEditorRebuild = nil
 
 local COL_BG       = Color(15, 15, 15, 245)
 local COL_HEADER   = Color(25, 25, 25, 255)
@@ -237,6 +240,7 @@ end)
 
 net.Receive("ZC_BuyMenu_ItemList", function()
     shopItems = {}
+    killRewards = {}
     local count = net.ReadUInt(16)
     for i = 1, count do
         shopItems[i] = {
@@ -252,6 +256,18 @@ net.Receive("ZC_BuyMenu_ItemList", function()
     end
     playerMoney = net.ReadInt(32)
     canEditPrices = net.ReadBool()
+    canEditKillRewards = net.ReadBool()
+
+    local rewardCount = net.ReadUInt(16)
+    for i = 1, rewardCount do
+        killRewards[i] = {
+            label = net.ReadString(),
+            key = net.ReadString(),
+            rewardType = net.ReadString(),
+            defaultReward = net.ReadUInt(16),
+            currentReward = net.ReadUInt(16),
+        }
+    end
 
     if IsValid(shopFrame) and shopFrame.RebuildItems then
         shopFrame:RebuildItems()
@@ -259,6 +275,10 @@ net.Receive("ZC_BuyMenu_ItemList", function()
 
     if isfunction(activePriceEditorRebuild) then
         activePriceEditorRebuild()
+    end
+
+    if isfunction(activeRewardEditorRebuild) then
+        activeRewardEditorRebuild()
     end
 end)
 
@@ -580,6 +600,120 @@ function OpenBuyMenu()
         BuildRows()
     end
 
+    local function OpenRewardEditor()
+        local editor = vgui.Create("DFrame")
+        editor:SetSize(math.min(ScrW() * 0.62, 840), math.min(ScrH() * 0.76, 600))
+        editor:Center()
+        editor:SetTitle("Kill Reward Editor")
+        editor:MakePopup()
+        editor.OnRemove = function()
+            if activeRewardEditorRebuild then
+                activeRewardEditorRebuild = nil
+            end
+        end
+
+        local search = vgui.Create("DTextEntry", editor)
+        search:SetPos(10, 34)
+        search:SetSize(editor:GetWide() - 20, 24)
+        search:SetPlaceholderText("Filter by label, class tag, or reward type...")
+
+        local list = vgui.Create("DScrollPanel", editor)
+        list:SetPos(10, 64)
+        list:SetSize(editor:GetWide() - 20, editor:GetTall() - 74)
+
+        local function BuildRows()
+            list:Clear()
+            local query = string.lower(string.Trim(search:GetValue() or ""))
+            local y = 0
+            local rowH = 38
+
+            for _, reward in ipairs(killRewards) do
+                local rewardTypeName = reward.rewardType == "vj" and "VJ Class" or "NPC"
+                local hay = string.lower((reward.label or "") .. " " .. (reward.key or "") .. " " .. rewardTypeName)
+                if query ~= "" and not string.find(hay, query, 1, true) then continue end
+
+                local row = vgui.Create("DPanel", list)
+                row:SetPos(0, y)
+                row:SetSize(list:GetWide() - 16, rowH)
+                function row:Paint(w, h)
+                    draw.RoundedBox(4, 0, 0, w, h, COL_ITEM)
+                    surface.SetDrawColor(COL_DIVIDER)
+                    surface.DrawRect(0, h - 1, w, 1)
+                end
+
+                local lbl = vgui.Create("DLabel", row)
+                lbl:SetPos(8, 0)
+                lbl:SetSize(math.floor(row:GetWide() * 0.36), rowH)
+                lbl:SetText("[" .. rewardTypeName .. "] " .. tostring(reward.label or reward.key or "?"))
+                lbl:SetFont("HomigradFontVSmall")
+                lbl:SetTextColor(COL_WHITE)
+                lbl:SetContentAlignment(4)
+
+                local keyLbl = vgui.Create("DLabel", row)
+                keyLbl:SetPos(math.floor(row:GetWide() * 0.36), 0)
+                keyLbl:SetSize(math.floor(row:GetWide() * 0.2), rowH)
+                keyLbl:SetText(tostring(reward.key or ""))
+                keyLbl:SetFont("HomigradFontVSmall")
+                keyLbl:SetTextColor(COL_GREY)
+                keyLbl:SetContentAlignment(4)
+
+                local entry = vgui.Create("DTextEntry", row)
+                entry:SetPos(math.floor(row:GetWide() * 0.57), 7)
+                entry:SetSize(72, rowH - 14)
+                entry:SetNumeric(true)
+                entry:SetValue(tostring(reward.currentReward or 0))
+
+                local defaultBtn = vgui.Create("DButton", row)
+                defaultBtn:SetPos(row:GetWide() - 170, 5)
+                defaultBtn:SetSize(76, rowH - 10)
+                defaultBtn:SetText("Default")
+                defaultBtn:SetFont("HomigradFontSmall")
+                defaultBtn:SetTextColor(Color(20, 20, 20))
+                defaultBtn.Paint = function(self, w, h)
+                    draw.RoundedBox(4, 0, 0, w, h, self:IsHovered() and Color(120, 120, 120, 255) or Color(95, 95, 95, 255))
+                end
+                defaultBtn.DoClick = function()
+                    entry:SetValue(tostring(reward.defaultReward or 0))
+                end
+
+                local saveBtn = vgui.Create("DButton", row)
+                saveBtn:SetPos(row:GetWide() - 88, 5)
+                saveBtn:SetSize(80, rowH - 10)
+                saveBtn:SetText("Save")
+                saveBtn:SetFont("HomigradFontSmall")
+                saveBtn:SetTextColor(Color(20, 20, 20))
+                saveBtn.Paint = function(self, w, h)
+                    draw.RoundedBox(4, 0, 0, w, h, self:IsHovered() and Color(220, 170, 70, 255) or COL_ACCENT)
+                end
+                saveBtn.DoClick = function()
+                    local value = math.Clamp(tonumber(entry:GetValue()) or 0, 0, 20000)
+
+                    net.Start("ZC_BuyMenu_AdminSetKillReward")
+                        net.WriteString(tostring(reward.rewardType or "npc"))
+                        net.WriteString(tostring(reward.key or ""))
+                        net.WriteUInt(value, 16)
+                    net.SendToServer()
+
+                    reward.currentReward = value
+                    entry:SetValue(tostring(value))
+                end
+
+                y = y + rowH + 2
+            end
+        end
+
+        activeRewardEditorRebuild = function()
+            if not IsValid(editor) then
+                activeRewardEditorRebuild = nil
+                return
+            end
+            BuildRows()
+        end
+
+        search.OnValueChange = BuildRows
+        BuildRows()
+    end
+
     if canEditPrices then
         local priceBtn = vgui.Create("DButton", frame)
         priceBtn:SetPos(fw - 235, 6)
@@ -592,6 +726,21 @@ function OpenBuyMenu()
         end
         function priceBtn:DoClick()
             OpenPriceEditor()
+        end
+    end
+
+    if canEditKillRewards then
+        local rewardBtn = vgui.Create("DButton", frame)
+        rewardBtn:SetPos(fw - 331, 6)
+        rewardBtn:SetSize(88, 24)
+        rewardBtn:SetText("REWARDS")
+        rewardBtn:SetFont("HomigradFontSmall")
+        rewardBtn:SetTextColor(Color(20, 20, 20, 255))
+        function rewardBtn:Paint(w, h)
+            draw.RoundedBox(4, 0, 0, w, h, self:IsHovered() and Color(220, 170, 70, 255) or COL_ACCENT)
+        end
+        function rewardBtn:DoClick()
+            OpenRewardEditor()
         end
     end
 

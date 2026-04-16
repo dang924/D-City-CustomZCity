@@ -151,6 +151,11 @@ local function Initialize()
         -- mid-frame (important when multiple Combine spawn in the same wave tick).
         local spawnEntry = GetCombineSpawnEntry()
 
+        -- Block the CoopPersistence 0.5s check from overriding our class assignment.
+        -- SpawnAsRebel achieves this via ZC_ApplyManagedSpawn; we mirror that here
+        -- so ShouldSkipManagedSpawn returns true while the Combine setup is in flight.
+        ply.ZC_ManagedSpawnUntil = CurTime() + 3
+
         ply:Spawn()
 
         timer.Simple(0, function()
@@ -209,14 +214,20 @@ local function Initialize()
             ply:Give("weapon_hands_sh")
             ply:SelectWeapon("weapon_hands_sh")
 
-            -- Position from PointEditor entry (includes angle) or world origin fallback
-            if spawnEntry then
-                ply:SetPos(spawnEntry.pos)
-                if spawnEntry.ang then ply:SetEyeAngles(spawnEntry.ang) end
+            -- Position from PointEditor entry (includes angle) or world origin fallback.
+            -- ZC_ApplyManagedSpawn mirrors what SpawnAsRebel does: repeated placement
+            -- at 0 / 0.15 / 0.6s and keeps ZC_ManagedSpawnUntil live so the
+            -- CoopPersistence 0.5s check stays suppressed through the whole setup window.
+            local spawnPos = spawnEntry and spawnEntry.pos or Vector(0, 0, 0)
+            local spawnAng = spawnEntry and spawnEntry.ang or nil
+            if _G.ZC_ApplyManagedSpawn then
+                _G.ZC_ApplyManagedSpawn(ply, spawnPos, spawnAng, 2)
             else
-                ply:SetPos(Vector(0, 0, 0))
+                ply:SetPos(spawnPos)
+                if spawnAng then ply:SetEyeAngles(spawnAng) end
+                ply:SetLocalVelocity(Vector(0, 0, 0))
+                ply.ZC_ManagedSpawnUntil = CurTime() + 2
             end
-            ply:SetLocalVelocity(Vector(0, 0, 0))
 
             timer.Simple(0.1, function()
                 if IsValid(ply) then
