@@ -30,6 +30,11 @@ if not ZC_IsPatchRebelPlayer then
     include("autorun/server/sv_patch_player_factions.lua")
 end
 
+-- Default ON: apply VJ relationship overrides unless explicitly disabled.
+local cv_enable_vj_rel = CreateConVar("zc_enable_vj_relationship_overrides", "1", FCVAR_ARCHIVE + FCVAR_NOTIFY,
+    "Enable VJ SNPC relationship overrides for player factions.")
+if not cv_enable_vj_rel:GetBool() then return end
+
 local SCRIPTED_MAPS = {
     ["d1_trainstation_01"] = true,
     ["d1_trainstation_02"] = true,

@@ -82,6 +82,10 @@ local function IsNoTarget(ply)
     return ZC_NoTarget and ZC_NoTarget[ply:SteamID()] == true
 end
 
+local function IsVJSNPC(npc)
+    return IsValid(npc) and istable(npc.VJ_NPC_Class)
+end
+
 -- Uses the pre-built cachedPlayerPos table (populated at the top of each Think tick).
 local function GetNearestPlayerDistSqr(pos)
     local best = math.huge
@@ -141,6 +145,7 @@ hook.Add("Think", "ZCity_NPCRelationships", function()
 
     for _, npc in ipairs(cachedCombine) do
         if not IsValid(npc) then continue end
+        if IsVJSNPC(npc) then continue end
         if npc.GetNPCState and npc:GetNPCState() == NPC_STATE_SCRIPT then continue end
         if npc.ZC_KnockedDown then continue end
 
