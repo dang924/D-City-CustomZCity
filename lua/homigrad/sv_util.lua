@@ -679,6 +679,32 @@ concommand.Add("hg_dropkastet",function(ply)
 	ply:DoAnimationEvent(ACT_GMOD_GESTURE_MELEE_SHOVE_1HAND)
 end)
 
+local function hgTry2Fire(ply)
+	if not IsValid(ply) or not ply:Alive() then return end
+
+	local wep = ply:GetActiveWeapon()
+	if not IsValid(wep) then return end
+
+	if wep.HG_SecondaryFire then
+		wep:HG_SecondaryFire()
+		return
+	end
+
+	if wep.UseHG2Fire and wep.SecondaryAttack then
+		wep:SecondaryAttack()
+	end
+end
+
+concommand.Add("hg_2fire", function(ply)
+	hgTry2Fire(ply)
+end)
+
+concommand.Add("+hg_2fire", function(ply)
+	hgTry2Fire(ply)
+end)
+
+concommand.Add("-hg_2fire", function() end)
+
 hook.Add("SetupMove", "SV_SYNC", function(ply)
 	if not ply.sync then
 		ply.sync = true

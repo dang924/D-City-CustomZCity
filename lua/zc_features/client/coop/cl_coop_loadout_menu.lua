@@ -231,9 +231,9 @@ local function SeedFallbackCoopLoadouts(reason)
                 "weapon_walkie_talkie",
             },
             armor = {
-                torso = {"$random", "vest5", "vest4", "vest1"},
-                head = {"$random", "helmet1", "helmet7"},
-                face = {"$random", "mask1", "mask3", "nightvision1", ""},
+                torso = "", -- applied by Gordon playerclass
+                head = "", -- applied by Gordon playerclass
+                face = "",
                 ears = "",
             }
         },

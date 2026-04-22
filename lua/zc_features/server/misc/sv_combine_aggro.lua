@@ -50,6 +50,20 @@ end
 
 if CLIENT then return end
 
+local cv_enable_aggro_testing = CreateConVar(
+    "zc_enable_combine_aggro_testing",
+    "0",
+    FCVAR_ARCHIVE + FCVAR_NOTIFY,
+    "Enable legacy testing combine aggro system. Disabled by default because it can thrash AI pathing.",
+    0,
+    1
+)
+
+if not cv_enable_aggro_testing:GetBool() then
+    print("[ZCity] Combine aggro testing system disabled (zc_enable_combine_aggro_testing=0).")
+    return
+end
+
 -- Scripted sequence safety: skip on known maps
 local SCRIPTED_MAPS = {
     ["d1_trainstation_01"] = true,
@@ -72,6 +86,9 @@ combineRegistry = combineRegistry or {}
 -- Placeholder: Replace with your actual Combine player detection logic
 local function IsCombinePlayer(ply)
     -- Example: return ply:Team() == TEAM_COMBINE
+    if ZC_IsPatchCombinePlayer then
+        return ZC_IsPatchCombinePlayer(ply)
+    end
     return ply.IsCombinePlayer and ply:IsCombinePlayer() or false
 end
 
@@ -169,6 +186,14 @@ local AGGRO_THRESHOLD = 10
 local AGGRO_DECAY = 1
 
 timer.Create("ZCity_Aggro_Think", 0.2, 0, function()
+    local now = CurTime()
+    local hostileRebelNPCs = {}
+    for _, ent in ipairs(ents.GetAll()) do
+        if IsValid(ent) and (ent:GetClass() == "npc_citizen" or ent:GetClass() == "npc_alyx" or ent:GetClass() == "npc_barney" or ent:GetClass() == "npc_vortigaunt") then
+            hostileRebelNPCs[#hostileRebelNPCs + 1] = ent
+        end
+    end
+
     for _, npc in pairs(combineRegistry) do
         if not IsValid(npc) then continue end
         local aggro = npc.zc_aggro or {}
@@ -191,14 +216,18 @@ timer.Create("ZCity_Aggro_Think", 0.2, 0, function()
         if topPly and topScore > AGGRO_THRESHOLD then
             local targetEnt = GetBullseyeForPlayer(topPly)
             if npc:Visible(targetEnt) and npc:GetPos():DistToSqr(targetEnt:GetPos()) < AGGRO_ENGAGE_DIST_SQR then
-                npc:AddEntityRelationship(targetEnt, D_HT, 99)
-                npc:SetEnemy(targetEnt)
+                if npc:GetEnemy() ~= targetEnt and now >= (npc.zc_nextForcedEnemy or 0) then
+                    npc.zc_nextForcedEnemy = now + 0.6
+                    npc:AddEntityRelationship(targetEnt, D_HT, 99)
+                    npc:SetEnemy(targetEnt)
+                end
             end
         end
         -- Always target hostile rebel NPCs
-        for _, ent in ipairs(ents.GetAll()) do
-            if IsValid(ent) and (ent:GetClass() == "npc_citizen" or ent:GetClass() == "npc_alyx" or ent:GetClass() == "npc_barney" or ent:GetClass() == "npc_vortigaunt") then
-                if npc:Visible(ent) and npc:GetPos():DistToSqr(ent:GetPos()) < AGGRO_ENGAGE_DIST_SQR then
+        for _, ent in ipairs(hostileRebelNPCs) do
+            if npc:Visible(ent) and npc:GetPos():DistToSqr(ent:GetPos()) < AGGRO_ENGAGE_DIST_SQR then
+                if npc:GetEnemy() ~= ent and now >= (npc.zc_nextForcedEnemy or 0) then
+                    npc.zc_nextForcedEnemy = now + 0.6
                     npc:AddEntityRelationship(ent, D_HT, 99)
                     npc:SetEnemy(ent)
                 end

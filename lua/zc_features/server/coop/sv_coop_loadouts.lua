@@ -315,9 +315,9 @@ local BASE_DEFAULT_COOP_LOADOUTS = {
             "weapon_walkie_talkie",
         },
         armor = {
-            torso = {"$random", "vest5", "vest4", "vest1"},
-            head = {"$random", "helmet1", "helmet7"},
-            face = {"$random", "mask1", "mask3", "nightvision1", ""},
+            torso = "", -- applied by Gordon playerclass
+            head  = "", -- applied by Gordon playerclass
+            face = "",
             ears = "",
         }
     },
@@ -541,6 +541,22 @@ end
 
 local LOADOUTS_FILE = "zc_coop_loadouts.json"
 local LOADOUTS_FILE_BACKUP = "zc_coop_loadouts.backup.json"
+
+local function SaveCoopLoadouts()
+    local json = util.TableToJSON(ZC_CoopLoadouts, true)
+    if not isstring(json) or json == "" then
+        print("[ZC CoopLoadouts] ERROR: Failed to serialize loadouts; keeping existing file unchanged")
+        return false
+    end
+
+    local current = file.Read(LOADOUTS_FILE, "DATA")
+    if isstring(current) and current ~= "" then
+        file.Write(LOADOUTS_FILE_BACKUP, current)
+    end
+
+    file.Write(LOADOUTS_FILE, json)
+    return true
+end
 
 local CORE_CLASS_ORDER = {
     Gordon = 1,
@@ -1007,22 +1023,6 @@ _G.ZC_GetSubclassSlotMultiplier = function(group, subclass, fallback)
     local value = map[group][subclass]
     if value == nil then return fallback or 1 end
     return tonumber(value) or (fallback or 1)
-end
-
-local function SaveCoopLoadouts()
-    local json = util.TableToJSON(ZC_CoopLoadouts, true)
-    if not isstring(json) or json == "" then
-        print("[ZC CoopLoadouts] ERROR: Failed to serialize loadouts; keeping existing file unchanged")
-        return false
-    end
-
-    local current = file.Read(LOADOUTS_FILE, "DATA")
-    if isstring(current) and current ~= "" then
-        file.Write(LOADOUTS_FILE_BACKUP, current)
-    end
-
-    file.Write(LOADOUTS_FILE, json)
-    return true
 end
 
 local function GetCoopLoadoutFileTimestamp(path, realm)

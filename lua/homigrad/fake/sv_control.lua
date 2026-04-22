@@ -248,7 +248,19 @@ hook.Add("Think", "Fake", function()
 			end
 
 			if ply:InVehicle() then
-				ply:SetPos(vector_origin)
+				local seat = ply:GetVehicle()
+				local parent = IsValid(seat) and seat:GetParent() or NULL
+
+				if IsValid(seat) then
+					if IsValid(parent) then
+						-- Keep the hidden player entity near the active vehicle instead of forcing world origin.
+						ply:SetPos(parent:WorldSpaceCenter())
+					else
+						ply:SetPos(seat:WorldSpaceCenter())
+					end
+				else
+					ply:SetPos(pos)
+				end
 			else
 				ply:SetPos(pos)
 				--ply:SetVelocity(vector_origin)

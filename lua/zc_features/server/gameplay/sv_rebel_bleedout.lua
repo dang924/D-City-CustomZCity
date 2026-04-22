@@ -1,4 +1,4 @@
--- Kills a downed Rebel player if they remain incapacitated for too long.
+-- Kills a downed player if they remain incapacitated for too long.
 -- Uses ZCity's HG_OnOtrub / HG_OnWakeOtrub hooks and org.uncon_timer.
 
 local initialized = false
@@ -7,10 +7,9 @@ local function Initialize()
     initialized = true
     local BLEEDOUT_TIME = 15  -- seconds before a downed player dies
 
-    -- Only Gordon stays down indefinitely — all other classes bleed out
-    local EXEMPT_CLASSES = {
-        ["Gordon"] = true,
-    }
+    local function IsBleedoutExempt(ply)
+        return string.lower(tostring(ply.PlayerClassName or "")) == "gordon"
+    end
 
     local function IsHeadcrabbed(ply)
         -- org.headcrabon is set by AddHeadcrab() and cleared on transformation/death
@@ -23,7 +22,7 @@ local function Initialize()
 
     hook.Add("HG_OnOtrub", "ZCity_RebelBleedOut", function(ply)
         if not IsValid(ply) then return end
-        if EXEMPT_CLASSES[ply.PlayerClassName] then return end
+        if IsBleedoutExempt(ply) then return end
 
         local timerName = GetTimerName(ply)
         timer.Remove(timerName)

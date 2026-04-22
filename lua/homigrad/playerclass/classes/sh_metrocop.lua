@@ -3,7 +3,7 @@ local CLASS = player.RegClass("Metrocop")
 
 
 local combine_models = {
-    "models/player/police.mdl"
+    "models/player_hl2_combine_grunt.mdl"
 }
 
 

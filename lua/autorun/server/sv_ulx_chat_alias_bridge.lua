@@ -60,6 +60,8 @@ local function wasCommandRecentlyDispatched(ply, commandName, args)
 end
 
 local skipAliases = {
+    ["!join"] = true,
+    ["/join"] = true,
     ["!damagelog"] = true,
     ["/damagelog"] = true,
     ["!event"] = true,
@@ -84,6 +86,8 @@ local skipAliases = {
     ["/notarget"] = true,
     ["!rtv"] = true,
     ["/rtv"] = true,
+    ["!stuck"] = true,
+    ["/stuck"] = true,
     ["!toggleloadouts"] = true,
     ["/toggleloadouts"] = true,
 }

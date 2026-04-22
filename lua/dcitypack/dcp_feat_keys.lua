@@ -44,6 +44,7 @@ return {
     "autorun_client_cl_nuggify_loader",
     "autorun_client_cl_organism_nil_guard",
     "autorun_client_cl_player_warnings_menu",
+    "autorun_client_cl_rebel_bleedout",
     "autorun_client_cl_zframe_bootstrap",
     "autorun_client_cl_ragdoll_owner_fix",
     "autorun_client_cl_roleplay_chat",

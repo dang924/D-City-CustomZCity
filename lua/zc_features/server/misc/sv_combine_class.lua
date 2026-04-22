@@ -29,12 +29,12 @@ local function Initialize()
     }
 
     -- Only Combine players can use this
-    -- Subclasses available for manual selection (Elite is random-only)
+    -- Subclasses available for manual selection (Grenadier is random-only)
     local MANUAL_SUBCLASSES = {
-        ["default"]    = "Soldier",
+        ["default"]    = "Ordinal",
         ["sniper"]     = "Sniper",
-        ["shotgunner"] = "Shotgunner",
-        ["metropolice"] = "Metropolice",
+        ["shotgunner"] = "Suppressor",
+        ["metropolice"] = "Grunt",
     }
 
     local ELITE_CHANCE   = 0.10  -- 10% chance of becoming Elite on respawn
@@ -124,11 +124,11 @@ local function Initialize()
     }
 
     local SUBCLASS_ROLES = {
-        ["default"]     = "Soldier",
-        ["elite"]       = "Elite",
+        ["default"]     = "Ordinal",
+        ["elite"]       = "Grenadier",
         ["sniper"]      = "Sniper",
-        ["shotgunner"]  = "Shotgunner",
-        ["metropolice"] = "Officer",
+        ["shotgunner"]  = "Suppressor",
+        ["metropolice"] = "Grunt",
     }
 
     -- Apply Elite organism enhancements — close to Gordon's HEV stats but
@@ -253,7 +253,7 @@ local function Initialize()
         for key, name in pairs(MANUAL_SUBCLASSES) do
             ply:ChatPrint("  !combineclass " .. key .. " — " .. name)
         end
-        ply:ChatPrint("  Elite is assigned randomly (" .. math.floor(ELITE_CHANCE * 100) .. "% chance on respawn)" .. (ply:IsSuperAdmin() and " — superadmins may force with !combineclass elite." or "."))
+        ply:ChatPrint("  Grenadier is assigned randomly (" .. math.floor(ELITE_CHANCE * 100) .. "% chance on respawn)" .. (ply:IsSuperAdmin() and " — superadmins may force with !combineclass grenadier (or !combineclass elite)." or "."))
     end
 
     hook.Add("HG_PlayerSay", "ZCity_CombineClassSelect", function(ply, txtTbl, text)
@@ -281,17 +281,21 @@ local function Initialize()
             end
         end
 
-        -- Block manual Elite selection unless superadmin
+        if chosen == "grenadier" then
+            chosen = "elite"
+        end
+
+        -- Block manual Grenadier selection unless superadmin
         if chosen == "elite" then
             if not ply:IsSuperAdmin() then
-                ply:ChatPrint("[ZCity] Elite is a special assignment — it cannot be chosen manually.")
+                ply:ChatPrint("[ZCity] Grenadier is a special assignment — it cannot be chosen manually.")
                 return ""
             end
             -- Superadmins can force Elite even if one already exists
             if HasActiveElite() then
-                ply:ChatPrint("[ZCity] Warning: an Elite is already active. Superadmin override applied.")
+                ply:ChatPrint("[ZCity] Warning: a Grenadier is already active. Superadmin override applied.")
             else
-                ply:ChatPrint("[ZCity] Superadmin override: assigning Elite.")
+                ply:ChatPrint("[ZCity] Superadmin override: assigning Grenadier.")
             end
         end
 
@@ -322,10 +326,10 @@ local function Initialize()
                 ply.subClass = "elite"
                 ply:SetPlayerClass("Combine")      -- ZCity equips via giveSubClassLoadout
                 ply.subClass = "elite"              -- restore after CLASS.On clears it
-                zb.GiveRole(ply, "Elite", clr_elite)
+                zb.GiveRole(ply, "Grenadier", clr_elite)
                 ApplyEliteStats(ply)
                 RefreshEliteClientState(ply)
-                ply:ChatPrint("[ZCity] You have been selected as an Elite soldier.")
+                ply:ChatPrint("[ZCity] You have been selected as a Grenadier.")
                 net.Start("ZC_EliteSpawnMessage")
                     net.WriteString(ELITE_MESSAGES[math.random(#ELITE_MESSAGES)])
                 net.Send(ply)
@@ -343,7 +347,7 @@ local function Initialize()
                     sub = pref
                 else
                     sub = "default"
-                    ply:ChatPrint("[ZCity] " .. (MANUAL_SUBCLASSES[pref] or pref) .. " slots are full — spawning as Soldier.")
+                    ply:ChatPrint("[ZCity] " .. (MANUAL_SUBCLASSES[pref] or pref) .. " slots are full — spawning as Ordinal.")
                 end
             end
 
@@ -360,7 +364,7 @@ local function Initialize()
             end
 
             RefreshEliteClientState(ply)
-            zb.GiveRole(ply, SUBCLASS_ROLES[sub] or "Soldier", SUBCLASS_COLORS[sub] or clr_combine)
+            zb.GiveRole(ply, SUBCLASS_ROLES[sub] or "Ordinal", SUBCLASS_COLORS[sub] or clr_combine)
         end)
     end)
 

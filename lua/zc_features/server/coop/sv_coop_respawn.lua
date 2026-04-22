@@ -480,6 +480,17 @@ ApplyManagedSpawn = function(ply, pos, ang, duration)
         if not IsValid(ply) or not ply:Alive() then return end
         if (ply.ZC_ManagedSpawnUntil or 0) < CurTime() then return end
 
+        -- If the player is already in a vehicle, do NOT teleport them: the homigrad
+        -- Ragdoll_Create for EnterVehicleRag reads ply:GetPos() as the ragdoll origin.
+        -- Corrupting that position (to the spawn point) builds the weld constraint with
+        -- a massive offset and causes the vehicle to fling toward the spawn point.
+        if ply:InVehicle() then
+            ply.ZC_ManagedSpawnUntil = nil
+            ply.ZC_ManagedSpawnPos   = nil
+            ply.ZC_ManagedSpawnAng   = nil
+            return
+        end
+
         ply:SetPos(ply.ZC_ManagedSpawnPos)
         if ply.ZC_ManagedSpawnAng then
             ply:SetEyeAngles(ply.ZC_ManagedSpawnAng)
@@ -771,10 +782,15 @@ local function Initialize()
             end
         end
 
-        for index, ply in ipairs(orderedPlayers) do
-            local formationIndex = index - 1
+        local formationIndex = 0
+        for _, ply in ipairs(orderedPlayers) do
+            -- Do not apply spawn anchors to players already in vehicles: the deferred
+            -- place() calls would corrupt ply:GetPos() during homigrad Ragdoll_Create
+            -- and cause weld constraints to fling the vehicle to the spawn point.
+            if ply:InVehicle() then continue end
             local spawnPos, spawnAng = GetStaggeredSpawnPos(startPos, startAng, formationIndex)
             ApplyManagedSpawn(ply, spawnPos, spawnAng, 2.5)
+            formationIndex = formationIndex + 1
         end
 
         timer.Simple(8.1, function()

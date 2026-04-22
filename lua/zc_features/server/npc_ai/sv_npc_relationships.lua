@@ -58,10 +58,21 @@ local cacheTime     = 0
 local nextThinkRun  = 0
 local REL_THINK_INTERVAL          = 0.2   -- was 0.1; halved to cut per-tick Lua cost
 local CACHE_INTERVAL              = 1
-local ACQUIRE_RETRY_INTERVAL_IDLE   = 0.12
-local ACQUIRE_RETRY_INTERVAL_ACTIVE = 0.22
-local PUSH_MEMORY_INTERVAL        = 0.25
+local ACQUIRE_RETRY_INTERVAL_IDLE   = 0.35
+local ACQUIRE_RETRY_INTERVAL_ACTIVE = 0.55
+local PUSH_MEMORY_INTERVAL        = 0.8
 local ACQUIRE_MAX_DIST_SQR        = 12000 * 12000
+local MAX_FORCED_PATH_Z_DELTA     = 420
+local MIN_FORCED_REPATH_INTERVAL  = 0.65
+
+local cv_enable_npc_relationship_force = CreateConVar(
+    "zc_enable_npc_relationship_force",
+    "1",
+    FCVAR_ARCHIVE + FCVAR_NOTIFY,
+    "Enable forced enemy assignment logic for combine NPC relationship patch.",
+    0,
+    1
+)
 
 -- Distance-based LOD: NPCs beyond this distance from all players have their enemy
 -- cleared and are skipped — Source engine stops running pathfinding + combat AI for them.
@@ -86,6 +97,16 @@ local function IsVJSNPC(npc)
     return IsValid(npc) and istable(npc.VJ_NPC_Class)
 end
 
+local function CanForcePathToTarget(npc, target)
+    if not IsValid(npc) or not IsValid(target) then return false end
+    local nPos = npc:GetPos()
+    local tPos = target:GetPos()
+    if math.abs(nPos.z - tPos.z) > MAX_FORCED_PATH_Z_DELTA then return false end
+    if target:IsPlayer() and target:InVehicle() then return false end
+    if not util.IsInWorld(tPos) then return false end
+    return true
+end
+
 -- Uses the pre-built cachedPlayerPos table (populated at the top of each Think tick).
 local function GetNearestPlayerDistSqr(pos)
     local best = math.huge
@@ -101,6 +122,7 @@ hook.Add("Think", "ZCity_NPCRelationships", function()
     if not CurrentRound then return end
     local round = CurrentRound()
     if not round or round.name ~= "coop" then return end
+    if not cv_enable_npc_relationship_force:GetBool() then return end
 
     local now = CurTime()
     if now < nextThinkRun then return end
@@ -182,10 +204,13 @@ hook.Add("Think", "ZCity_NPCRelationships", function()
                     -- instead of idling when LOS briefly breaks.
                     if now >= (npc.ZC_NextPushMemory or 0) then
                         npc.ZC_NextPushMemory = now + PUSH_MEMORY_INTERVAL + math.Rand(0, 0.08)
-                        npc:SetLastPosition(enemy:GetPos())
-                        npc:UpdateEnemyMemory(enemy, enemy:GetPos())
-                        if SCHED_CHASE_ENEMY and npc.SetSchedule and npc.GetNPCState and npc:GetNPCState() == NPC_STATE_IDLE then
-                            npc:SetSchedule(SCHED_CHASE_ENEMY)
+                        if now >= (npc.ZC_NextForcedRepath or 0) and CanForcePathToTarget(npc, enemy) then
+                            npc.ZC_NextForcedRepath = now + MIN_FORCED_REPATH_INTERVAL + math.Rand(0, 0.12)
+                            npc:SetLastPosition(enemy:GetPos())
+                            npc:UpdateEnemyMemory(enemy, enemy:GetPos())
+                            if SCHED_CHASE_ENEMY and npc.SetSchedule and npc.GetNPCState and npc:GetNPCState() == NPC_STATE_IDLE then
+                                npc:SetSchedule(SCHED_CHASE_ENEMY)
+                            end
                         end
                     end
                     continue
@@ -255,6 +280,8 @@ hook.Add("Think", "ZCity_NPCRelationships", function()
 
         local best = bestVisible or bestFallback
         if not IsValid(best) then continue end
+        if npc:GetEnemy() == best then continue end
+        if not CanForcePathToTarget(npc, best) then continue end
 
         if npc.IsAsleep and npc:IsAsleep() then
             npc:SetAsleep(false)

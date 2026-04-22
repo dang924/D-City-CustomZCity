@@ -45,6 +45,7 @@ local ULX_MODES = {
     jwick = MODE_EVENT,
     jwickend = MODE_EVENT,
     jwickset = MODE_EVENT,
+    kick = MODE_ALWAYS,
     kickprotection = MODE_ALWAYS,
     kickprotectionstatus = MODE_ALWAYS,
     manageclass = MODE_ALWAYS,
@@ -60,6 +61,7 @@ local ULX_MODES = {
     setdod = MODE_ALWAYS,
     setevent = MODE_ALWAYS,
     shoptoggle = MODE_ALWAYS,
+    stuck = MODE_COOP,
     toggleloadouts = MODE_EVENT,
 }
 
@@ -159,6 +161,10 @@ local CHAT_MODES = {
     ["/jwickend"] = MODE_EVENT,
     ["!jwickset"] = MODE_EVENT,
     ["/jwickset"] = MODE_EVENT,
+    ["!join"] = MODE_COOP,
+    ["/join"] = MODE_COOP,
+    ["!kick"] = MODE_ALWAYS,
+    ["/kick"] = MODE_ALWAYS,
     ["!kickprotection"] = MODE_ALWAYS,
     ["/kickprotection"] = MODE_ALWAYS,
     ["!kickprotectionstatus"] = MODE_ALWAYS,
@@ -205,6 +211,8 @@ local CHAT_MODES = {
     ["/shop"] = MODE_ALWAYS,
     ["!shoptoggle"] = MODE_ALWAYS,
     ["/shoptoggle"] = MODE_ALWAYS,
+    ["!stuck"] = MODE_COOP,
+    ["/stuck"] = MODE_COOP,
     ["!toggleloadouts"] = MODE_EVENT,
     ["/toggleloadouts"] = MODE_EVENT,
 }

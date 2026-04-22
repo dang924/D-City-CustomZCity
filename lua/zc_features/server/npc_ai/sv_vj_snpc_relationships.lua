@@ -35,13 +35,6 @@ local cv_enable_vj_rel = CreateConVar("zc_enable_vj_relationship_overrides", "1"
     "Enable VJ SNPC relationship overrides for player factions.")
 if not cv_enable_vj_rel:GetBool() then return end
 
-local SCRIPTED_MAPS = {
-    ["d1_trainstation_01"] = true,
-    ["d1_trainstation_02"] = true,
-    ["d1_trainstation_03"] = true,
-}
-local IS_SCRIPTED_MAP = SCRIPTED_MAPS[game.GetMap()] == true
-
 -- ── Faction detection ─────────────────────────────────────────────────────────
 -- Determined by VJ_NPC_Class table on the entity.
 
@@ -173,7 +166,6 @@ end
 -- Called on PlayerSpawn/PlayerInitialSpawn to handle the new player.
 local function ApplyRelationshipsForPlayer(ply)
     if not IsValid(ply) then return end
-    if IS_SCRIPTED_MAP then return end
     InvalidateAllRelApplied()
     for _, npc in ipairs(cachedRebelVJ) do
         if IsValid(npc) then ApplyRelationshipsToNPC(npc, "rebel") end
@@ -235,7 +227,6 @@ end
 hook.Add("OnEntityCreated", "ZCity_VJSNPCRelationships_Spawn", function(ent)
     if not IsValid(ent) then return end
     if not ent:IsNPC() then return end
-    if IS_SCRIPTED_MAP then return end
     timer.Simple(0.2, function()
         if not IsValid(ent) then return end
         local faction = GetVJFaction(ent)
@@ -262,7 +253,6 @@ end)
 -- ── Main Think ────────────────────────────────────────────────────────────────
 
 hook.Add("Think", "ZCity_VJSNPCRelationships", function()
-    if IS_SCRIPTED_MAP then return end
     if not CurrentRound then return end
     local round = CurrentRound()
     if not round or round.name ~= "coop" then return end

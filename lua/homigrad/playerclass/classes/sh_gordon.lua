@@ -709,6 +709,11 @@ elseif SERVER then
         if not ply:IsPlayer() or not ply:Alive() then return end
 
         if ply.PlayerClassName == "Gordon" and ply:GetNetVar("HEVSuit") then
+            if not istable(ply.HEV) then return end
+
+            ply.HEV.Medicine = tonumber(ply.HEV.Medicine) or 0
+            ply.HEV.Morphine = tonumber(ply.HEV.Morphine) or 0
+
             ply:SetNetVar("HEVMedicine", ply.HEV.Medicine)
             if org.brain > 0.1 then
                 org.mannitol = org.brain * 2

@@ -8,71 +8,107 @@
 
 if SERVER then return end
 
-local function IsInGlideVehicle()
-    local lply = LocalPlayer()
-    if not IsValid(lply) then return false end
-    
-    -- Check if player has a Glide vehicle via GlideGetVehicle()
-    if lply.GlideGetVehicle and IsValid(lply:GlideGetVehicle()) then
-        return true
+local function hasClassPart(ent, part)
+    if not IsValid(ent) then return false end
+    local cls = string.lower(ent:GetClass() or "")
+    return string.find(cls, part, 1, true) ~= nil
+end
+
+local function isVehicleLike(ent)
+    if not IsValid(ent) then return false end
+
+    if ent:IsVehicle() then return true end
+    if ent.IsGlideVehicle == true then return true end
+
+    local checks = {
+        "simfphys",
+        "gmod_sent_vehicle_fphysics",
+        "glide",
+        "lunasflightschool",
+        "wac_",
+        "aircraft",
+        "plane",
+        "heli",
+        "vehicle",
+        "car",
+    }
+
+    for _, part in ipairs(checks) do
+        if hasClassPart(ent, part) then return true end
     end
-    
-    -- Backup: check network variable
-    if lply:GetNWEntity("GlideVehicle") and IsValid(lply:GetNWEntity("GlideVehicle")) then
-        return true
-    end
-    
+
     return false
 end
 
-local function IsInSimfphysVehicle()
-    local lply = LocalPlayer()
-    if not IsValid(lply) then return false end
+local function getSeatAndVehicle(ply)
+    if not IsValid(ply) then return nil, nil end
+    if not ply:InVehicle() then return nil, nil end
 
-    if lply.IsDrivingSimfphys and lply:IsDrivingSimfphys() then
-        return true
-    end
-
-    if not lply:InVehicle() then return false end
-
-    local seat = lply:GetVehicle()
-    if not IsValid(seat) then return false end
+    local seat = ply:GetVehicle()
+    if not IsValid(seat) then return nil, nil end
 
     local parent = seat:GetParent()
-    if not IsValid(parent) then return false end
-
-    local cls = string.lower(parent:GetClass() or "")
-    if string.find(cls, "gmod_sent_vehicle_fphysics", 1, true) then
-        return true
+    if IsValid(parent) and parent ~= seat then
+        return seat, parent
     end
 
-    if simfphys and simfphys.IsCar and simfphys.IsCar(parent) then
-        return true
-    end
-    
-    return false
+    return seat, seat
 end
 
-local function IsInNativeVehicle()
-    local lply = LocalPlayer()
-    if not IsValid(lply) then return false end
-    if not lply:InVehicle() then return false end
+local function isSupportedVehicleSeat(ply)
+    if not IsValid(ply) then return false end
 
-    local veh = lply:GetVehicle()
-    if not IsValid(veh) then return false end
+    local seat, veh = getSeatAndVehicle(ply)
+    if not (IsValid(seat) and IsValid(veh)) then return false end
 
-    local cls = veh:GetClass()
-    return cls == "prop_vehicle_airboat" or cls == "prop_vehicle_jeep"
+    if ply.GlideGetVehicle and IsValid(ply:GlideGetVehicle()) then
+        return true
+    end
+    if ply.GetNWEntity and IsValid(ply:GetNWEntity("GlideVehicle")) then
+        return true
+    end
+
+    if ply.IsDrivingSimfphys and ply:IsDrivingSimfphys() then
+        return true
+    end
+
+    if simfphys and simfphys.IsCar and simfphys.IsCar(veh) then
+        return true
+    end
+
+    if veh.IsAircraft == true then
+        return true
+    end
+
+    if isVehicleLike(veh) or isVehicleLike(seat) then
+        return true
+    end
+
+    local vehCls = veh:GetClass()
+    if vehCls == "prop_vehicle_airboat" or vehCls == "prop_vehicle_jeep" then
+        return true
+    end
+
+    if seat:GetClass() == "prop_vehicle_prisoner_pod" and IsValid(seat:GetParent()) then
+        return true
+    end
+
+    return false
 end
 
 local function InstallViewUnlock()
-    if not hg or not hg.InputMouseApply then return false end
+    if not hook or not hook.Add then return false end
     
     local hookName = "DCityPatch_CameraViewUnlock"
+
+    hook.Remove("HG.InputMouseApply", "ZC_SimfphysViewUnlock")
+    hook.Remove("HG.InputMouseApply", "DCityAircraftCompat_PassengerCameraUnlock")
+    hook.Remove("HG.InputMouseApply", hookName)
     
     -- Install at HOOK_HIGH to run BEFORE fakeCameraAngles2
     hook.Add("HG.InputMouseApply", hookName, function(tbl)
-        if IsInGlideVehicle() or IsInSimfphysVehicle() or IsInNativeVehicle() then
+        local lply = LocalPlayer()
+        if isSupportedVehicleSeat(lply) then
             -- Return true to short-circuit the rest of the hook chain,
             -- allowing normal mouse input to be processed.
             return true

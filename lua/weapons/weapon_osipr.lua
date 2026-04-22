@@ -114,6 +114,15 @@ SWEP.availableAttachments = {
 }
 
 SWEP.Primary.Wait = 0.1
+SWEP.Secondary.Wait = 1.5
+SWEP.Secondary.ChargeDelay = 0.45
+SWEP.Secondary.AmmoCost = 10
+SWEP.Secondary.BallRadius = 10
+SWEP.Secondary.BallMass = 150
+SWEP.Secondary.BallDuration = 4
+SWEP.Secondary.BallSpeed = 1000
+SWEP.Secondary.BallTargetHitsToExpire = 3
+SWEP.UseHG2Fire = true
 SWEP.ReloadTime = 4
 SWEP.ReloadSoundes = {
 	"none",
@@ -275,3 +284,86 @@ SWEP.InspectAnimWepAng = {
 	Angle(0,0,0),
 	Angle(0,0,0)
 }
+
+function SWEP:CanHGSecondaryFire()
+	if (self.Secondary.Next or 0) > CurTime() then return false end
+	if not self:CanUse() then return false end
+
+	local owner = self:GetOwner()
+	if not IsValid(owner) then return false end
+
+	local ammoCost = self.Secondary.AmmoCost or 10
+	return owner:GetAmmoCount(self.Primary.Ammo) >= ammoCost
+end
+
+function SWEP:HG_SecondaryFire()
+	if not self:CanHGSecondaryFire() then return false end
+
+	local owner = self:GetOwner()
+	if not IsValid(owner) then return false end
+
+	local chargeDelay = self.Secondary.ChargeDelay or 0.45
+	self.Secondary.Next = CurTime() + (self.Secondary.Wait or 1.5)
+	self:SetNextSecondaryFire(self.Secondary.Next)
+	self:SetNextPrimaryFire(CurTime() + math.max(0.15, chargeDelay + 0.05))
+
+	owner:SetAnimation(PLAYER_ATTACK1)
+
+	local ammoCost = self.Secondary.AmmoCost or 10
+	self:EmitSound("Weapon_CombineGuard.Special1", 80, 100, 1, CHAN_WEAPON)
+
+	if SERVER then
+		owner:RemoveAmmo(ammoCost, self.Primary.Ammo)
+
+		timer.Simple(chargeDelay, function()
+			if not IsValid(self) or not IsValid(owner) then return end
+			if not owner:Alive() then return end
+			if owner:GetActiveWeapon() ~= self then return end
+
+			local _, muzzlePos, muzzleAng = self:GetTrace(true)
+			if not muzzlePos or not muzzleAng then
+				muzzlePos = owner:EyePos()
+				muzzleAng = owner:EyeAngles()
+			end
+
+			local shootDir = muzzleAng:Forward()
+			local targetPos = muzzlePos + shootDir * 40
+			local tr = util.TraceHull({
+				start = muzzlePos,
+				endpos = targetPos,
+				filter = owner,
+				mins = Vector(-4, -4, -4),
+				maxs = Vector(4, 4, 4),
+				mask = MASK_SHOT
+			})
+
+			local spawnPos = tr.Hit and (tr.HitPos - shootDir * 10) or targetPos
+			local ball = ents.Create("ent_hg_osipr_ball")
+			if IsValid(ball) then
+				ball:SetPos(spawnPos)
+				ball:SetAngles(shootDir:Angle())
+				ball:SetOwner(owner)
+				ball.HG_Duration = self.Secondary.BallDuration or 4
+				ball.HG_MaxTargetHits = self.Secondary.BallTargetHitsToExpire or 3
+				ball.HG_Mass = self.Secondary.BallMass or 150
+				ball.HG_Damage = 220
+				ball.HG_MinBounceSpeed = self.Secondary.BallSpeed or 1000
+				ball:Spawn()
+				ball:Activate()
+
+				local velocity = owner:GetVelocity() + shootDir * (self.Secondary.BallSpeed or 1000)
+				ball:Launch(velocity)
+				self:EmitSound("weapons/irifle/irifle_fire2.wav", 80, 100, 1, CHAN_WEAPON)
+			end
+		end)
+	end
+
+	return true
+end
+
+function SWEP:SecondaryAttack()
+end
+
+function SWEP:CanSecondaryAttack()
+	return false
+end

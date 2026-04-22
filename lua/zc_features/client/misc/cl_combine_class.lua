@@ -45,7 +45,7 @@ hook.Add("HUDPaint", "ZCity_EliteSpawnMessage", function()
 
     -- Subtitle
     draw.SimpleText(
-        "ELITE DESIGNATION CONFIRMED",
+        "GRENADIER DESIGNATION CONFIRMED",
         "HomigradFontSmall",
         sw / 2, sh * 0.42 + 26,
         Color(89, 230, 255, 180 * fade),
@@ -64,7 +64,7 @@ local function HasEliteCombineEffects(ply)
     if not IsValid(ply) or not ply:Alive() then return false end
     if ply:GetNWBool("ZC_IsCombineElite", false) then return true end
     if ply.PlayerClassName ~= "Combine" then return false end
-    if (ply:GetNWString("PlayerRole") or "") == "Elite" then return true end
+    if (ply:GetNWString("PlayerRole") or "") == "Grenadier" then return true end
     return ply.subClass == "elite"
 end
 

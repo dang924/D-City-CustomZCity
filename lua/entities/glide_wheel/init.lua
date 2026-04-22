@@ -270,6 +270,7 @@ local Min = math.min
 local Max = math.max
 local Atan2 = math.atan2
 local Approach = math.Approach
+local IsInWorld = util.IsInWorld
 local TraceHull = util.TraceHull
 local TractionRamp = Glide.TractionRamp
 
@@ -364,8 +365,20 @@ function ENT:DoPhysics( vehicle, phys, traceFilter, outLin, outAng, dt, vehSurfa
         vehAngVel:Add( angularImp )
 
         -- Teleport back up, using phys:SetPos to prevent going through stuff.
-        linearImp = phys:CalculateVelocityOffset( ray.HitPos - ( contactPos + ray.HitNormal * velU * dt ), pos )
-        vehPos:Add( linearImp / dt )
+        -- Clamp this correction so bad world/vis border contacts cannot fling vehicles.
+        if IsInWorld( ray.HitPos ) and IsInWorld( contactPos ) then
+            linearImp = phys:CalculateVelocityOffset( ray.HitPos - ( contactPos + ray.HitNormal * velU * dt ), pos )
+
+            local correction = linearImp / math.max( dt, 0.001 )
+            local correctionLen = correction:Length()
+            local maxCorrection = 80
+
+            if correctionLen > maxCorrection then
+                correction:Mul( maxCorrection / correctionLen )
+            end
+
+            vehPos:Add( correction )
+        end
 
         -- Remove the damping force, to prevent a excessive bounce.
         damperForce = 0

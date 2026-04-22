@@ -84,10 +84,7 @@ local primary_weapons = {
 local combine_subclasses = {
     default = {
         color = Color(0,220,220),
-        models = Model("models/player/combine_soldier.mdl"),
-		mat = {
-			["models/combine_soldier/combinesoldiersheet_player"] = "models/combine_soldier/combinesoldiersheet"
-		},
+        models = Model("models/player_hl2_combine_ordinal.mdl"),
         loadout = {
             {weapon = "weapon_melee"}, --;; ближний бой мясо кишки
             {
@@ -108,11 +105,7 @@ local combine_subclasses = {
 
     elite = {
         color = Color(246,13,13),
-        models = Model("models/player/combine_super_soldier.mdl"),
-		mat = {
-			["models/combine_soldier/combine_elite_player"] = "models/combine_soldier/combine_elite",
-			["models/combine_soldier/combine_elite_player_head"] = "models/combine_soldier/combine_elite"
-		},
+        models = Model("models/player_hl2_combine_wallhammer.mdl"),
         loadout = {
             {weapon = "weapon_melee"},
             {
@@ -133,7 +126,7 @@ local combine_subclasses = {
 
     sniper = {
         color = Color(0,220,220),
-        models = Model("models/player/combine_soldier.mdl"),
+        models = Model("models/player_hl2_combine_ordinal.mdl"),
         loadout = {
             {weapon = "weapon_melee"},
             {
@@ -153,11 +146,8 @@ local combine_subclasses = {
 
     shotgunner = {
         color = Color(220,0,0),
-        models = Model("models/player/combine_soldier.mdl"),
+        models = Model("models/player_hl2_combine_suppressor.mdl"),
         skin = 1,
-		mat = {
-			["models/combine_soldier/combinesoldiersheet_player_shotgun"] = "models/combine_soldier/combinesoldiersheet_shotgun"
-		},
         loadout = {
             {weapon = "weapon_melee"},
             {

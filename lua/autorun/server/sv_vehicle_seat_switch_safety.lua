@@ -246,3 +246,91 @@ hook.Add("InitPostEntity", TAG .. "_InitPostEntity", function()
 end)
 
 print("[DCityPatch] Vehicle seat-switch safety active.")
+
+-- Cancel any active managed-spawn anchor the moment a player enters a vehicle.
+-- ApplyManagedSpawn (sv_coop_respawn) queues deferred ply:SetPos() calls at
+-- t+0 / t+0.15 / t+0.6s. If those fire while the player is seated the homigrad
+-- EnterVehicleRag timer reads ply:GetPos() == spawn_pos and builds the FakeRagdoll
+-- there, creating weld constraints between the spawn point and the vehicle that
+-- violently fling the vehicle toward the spawn point.
+hook.Add("PlayerEnteredVehicle", TAG .. "_ClearManagedSpawn", function(ply, seat)
+    if not IsValid(ply) then return end
+    ply.ZC_ManagedSpawnUntil = nil
+    ply.ZC_ManagedSpawnPos   = nil
+    ply.ZC_ManagedSpawnAng   = nil
+end)
+
+-- ---------------------------------------------------------------------------
+-- Rectwrap FakeRagdoll teleport sync
+--
+-- sv_tier_0.lua welds the homigrad FakeRagdoll to the SimFPhys vehicle with a
+-- forcelimit of 10000. When rectwrap teleports the vehicle ~11000 units via
+-- SetPos, the weld sees a massive distance on the next physics tick, breaks,
+-- and the OnRemove callback fires ExitVehicle -- ejecting the player.
+--
+-- Fix: this hook runs at HOOK_LOW (after rectwrap's default-priority Think).
+-- It detects large vehicle position deltas (>= WRAP_DIST) and immediately
+-- moves all FakeRagdoll physics bones by the same offset, so the weld never
+-- sees the distance and stays intact.
+-- ---------------------------------------------------------------------------
+local WRAP_DIST_SQ = 5000 * 5000  -- threshold to detect a rectwrap teleport
+local simfphysPrevPos = {}         -- [entIdx] = last known Vector
+
+local function TeleportRagdollPhysBones(ragdoll, offset)
+    if not IsValid(ragdoll) then return end
+    local count = ragdoll:GetPhysicsObjectCount()
+    for i = 0, count - 1 do
+        local phys = ragdoll:GetPhysicsObjectNum(i)
+        if not IsValid(phys) then continue end
+        phys:SetPos(phys:GetPos() + offset)
+        phys:SetVelocity(vector_origin)
+        phys:SetAngleVelocity(vector_origin)
+    end
+end
+
+hook.Add("Think", TAG .. "_RectwrapRagdollSync", function()
+    for _, ent in ipairs(ents.FindByClass("gmod_sent_vehicle_fphysics_base")) do
+        if not IsValid(ent) then continue end
+
+        local idx = ent:EntIndex()
+        local curPos = ent:GetPos()
+        local prevPos = simfphysPrevPos[idx]
+
+        if prevPos then
+            local deltaSq = curPos:DistToSqr(prevPos)
+            if deltaSq >= WRAP_DIST_SQ then
+                local offset = curPos - prevPos
+
+                for _, ply in ipairs(player.GetAll()) do
+                    if not IsValid(ply) then continue end
+                    if not ply:InVehicle() then continue end
+
+                    local seat = ply:GetVehicle()
+                    if not IsValid(seat) then continue end
+
+                    local seatParent = seat:GetParent()
+                    if seat ~= ent and seatParent ~= ent then continue end
+
+                    local ragdoll = ply.FakeRagdoll
+                    if not IsValid(ragdoll) then continue end
+
+                    TeleportRagdollPhysBones(ragdoll, offset)
+
+                    print(string.format(
+                        "[DCityPatch] RectwrapSync: moved FakeRagdoll of %s by %s",
+                        tostring(ply:Nick()), tostring(offset)
+                    ))
+                end
+            end
+        end
+
+        simfphysPrevPos[idx] = curPos
+    end
+
+    -- Clean up stale entries for removed vehicles.
+    for idx in pairs(simfphysPrevPos) do
+        if not IsValid(Entity(idx)) then
+            simfphysPrevPos[idx] = nil
+        end
+    end
+end, HOOK_LOW)
