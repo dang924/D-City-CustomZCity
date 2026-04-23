@@ -153,7 +153,7 @@ if CLIENT then
 			msg = hg.FurrifyPhrase(msg)
 		end
 
-		if lply:IsBerserk() then
+		if lply:IsBerserk() and lply.PlayerClassName != "subject617" then
 			return
 		end
 

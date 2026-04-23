@@ -163,6 +163,7 @@ SWEP.WorldPos = Vector(15, -0.5, -1.5)
 SWEP.WorldAng = Angle(0, 180, 0)
 SWEP.UseCustomWorldModel = true
 --https://youtu.be/I7TUHPn_W8c?list=RDEMAfyWQ8p5xUzfAWa3B6zoJg  wizards
+--Really good song ^^ 
 SWEP.attPos = Vector(0, 0.7, 0)
 SWEP.attAng = Angle(0.2, 0.7, 90)
 SWEP.lengthSub = 20

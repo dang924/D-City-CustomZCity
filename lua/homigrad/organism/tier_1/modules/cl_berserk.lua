@@ -34,22 +34,31 @@ local offset = CreateClientConVar("berserk_offset", "0.85", true, false, "Set be
 local bpm = CreateClientConVar("berserk_bpm", "70", true, false, "Set berserk effect bpm", 1, 280)
 local path = CreateClientConVar("berserk_path", "sound/zbattle/pharmacia.mp3", true, false, "Set berserk effect music path")
 
+local function resetBerserkPresentation()
+	hg.underberserk = false
+	hg.underberserk2 = false
+
+	if IsValid(hg.berserkStation) then
+		hg.berserkStation:Stop()
+		hg.berserkStation = nil
+	end
+
+	hg.notificationFont = "HuyFont"
+	hg.berserkIntensity = 0
+	hg.berserkClamped = 0
+end
+
 hook.Add("RenderScreenspaceEffects", "berserkEffect", function()
 	local organism = lply:Alive() and lply.organism
 	
 	if !organism then
-		hg.underberserk = false
-		hg.underberserk2 = false
+		resetBerserkPresentation()
 
-		if IsValid(hg.berserkStation) then
-			hg.berserkStation:Stop()
-			hg.berserkStation = nil
-			-- atlaschat.font:SetString("atlaschat.theme.text")
-		end
+		return
+	end
 
-		hg.notificationFont = "HuyFont"
-		hg.berserkIntensity = 0
-
+	if lply.PlayerClassName == "subject617" then
+		resetBerserkPresentation()
 		return
 	end
 
@@ -94,16 +103,7 @@ hook.Add("RenderScreenspaceEffects", "berserkEffect", function()
 			hg.berserkStartTime2 = SysTime()
 		end)
 	elseif berserk < 0.0001 then
-		hg.underberserk = false
-		hg.underberserk2 = false
-		if IsValid(hg.berserkStation) then
-			hg.berserkStation:Stop()
-			hg.berserkStation = nil
-			-- atlaschat.font:SetString("atlaschat.theme.text")
-		end
-
-		hg.notificationFont = "HuyFont"
-		hg.berserkIntensity = 0
+		resetBerserkPresentation()
 	end
 
 	if hg.underberserk then

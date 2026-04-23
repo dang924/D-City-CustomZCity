@@ -20,14 +20,38 @@ function zb:GetMode(round)
 	end
 end
 
-function CurrentRound()
-	if IsValid(ents.FindByClass( "trigger_changelevel" )[1]) then
-		zb.nextround = "coop"
-		zb.CROUND = zb.CROUND or "coop"
-		return zb.modes["coop"]
+local function getForcedModeName()
+	local cv = GetConVar("zb_forcemode")
+	local forced = string.lower(cv and cv:GetString() or "")
+
+	if forced == "" or forced == "random" then
+		return nil
 	end
 
-	zb.CROUND = zb.CROUND or "hmcd"
+	return zb:GetMode(forced) or forced
+end
+
+local function getPinnedMapMode()
+	if IsValid(ents.FindByClass( "trigger_changelevel" )[1]) then
+		return "coop"
+	end
+
+	local mapName = string.lower(game.GetMap() or "")
+	if string.StartWith(mapName, "hdn_") or string.StartWith(mapName, "ovr_") then
+		return "hidden"
+	end
+end
+
+function zb.GetDefaultRoundName()
+	return getPinnedMapMode() or "hmcd"
+end
+
+function zb.GetPreferredRoundName()
+	return getForcedModeName() or zb.GetDefaultRoundName()
+end
+
+function CurrentRound()
+	zb.CROUND = zb.CROUND or zb.GetPreferredRoundName()
 	if not zb.CROUND_MAIN or (zb.LASTCROUND != zb.CROUND) then
 		zb.CROUND_MAIN = zb:GetMode(zb.CROUND)
 		zb.LASTCROUND = zb.CROUND
@@ -156,7 +180,7 @@ function zb:EndRoundThink()
 			hook.Run("ZB_PreRoundStart")
 			hook.Run("TTTPrepareRound") -- stormfox2 random_round_weather
 
-			zb.CROUND = zb.nextround or "hmcd"
+			zb.CROUND = zb.nextround or zb.GetPreferredRoundName()
 			if CurrentRound().shouldfreeze then zb:Freeze() end
 
 			--PrintMessage(HUD_PRINTTALK, "Gamemode: " .. CurrentRound().PrintName or "None")
@@ -594,10 +618,18 @@ function zb:RoundStart()
 	nextMode = table.remove(zb.RoundList, 1)
 
 	local currentMode = mode.Type or round
+	local pinnedMode = getPinnedMapMode()
+	local nextRoundName = nextMode or zb.GetDefaultRoundName()
 
-	print("Next game mode is " .. nextMode)
+	if forcemode != "random" then
+		nextRoundName = zb:GetMode(forcemode) or forcemode
+	elseif pinnedMode then
+		nextRoundName = pinnedMode
+	end
 
-	NextRound(forcemode ~= "random" and forcemode or (nextMode or "hmcd"))
+	print("Next game mode is " .. tostring(nextRoundName))
+
+	NextRound(nextRoundName)
 
 	if CurrentRound().RoundStartPost then
 		CurrentRound():RoundStartPost()

@@ -702,7 +702,9 @@ function hg.MainTPIKFunction(ent, ply, wpn)
     if ent ~= ply and ent.organism and ent.organism.stamina and ent.organism.stamina[1] then
         local stammul = math_Clamp(1 - ent.organism.stamina[1] / 90, 0, 1)
 
-        local holdingrh = ent:GetManipulateBoneAngles(ent:LookupBone("ValveBiped.Bip01_R_Finger11"))[2] < 0
+        local rfinger = ent:LookupBone("ValveBiped.Bip01_R_Finger11")
+        local rfingerAngles = rfinger and ent:GetManipulateBoneAngles(rfinger)
+        local holdingrh = rfingerAngles and rfingerAngles[2] < 0
         if holdingrh then
             local rh = ent:LookupBone("ValveBiped.Bip01_R_Hand")
             local rhmat = ent:GetBoneMatrix(rh)
@@ -712,7 +714,9 @@ function hg.MainTPIKFunction(ent, ply, wpn)
             hg.bone_apply_matrix(ent, rh, rhmat)
         end
         
-        local holdinglh = ent:GetManipulateBoneAngles(ent:LookupBone("ValveBiped.Bip01_L_Finger11"))[2] < 0
+        local lfinger = ent:LookupBone("ValveBiped.Bip01_L_Finger11")
+        local lfingerAngles = lfinger and ent:GetManipulateBoneAngles(lfinger)
+        local holdinglh = lfingerAngles and lfingerAngles[2] < 0
         if holdinglh then
             local lh = ent:LookupBone("ValveBiped.Bip01_L_Hand")
             local lhmat = ent:GetBoneMatrix(lh)

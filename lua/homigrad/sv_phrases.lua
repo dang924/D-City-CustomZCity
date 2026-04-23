@@ -422,6 +422,8 @@ hook.Add("PreHomigradDamage","BurnScream", function( ent, dmgInfo )
 end)
 
 hook.Add("Org Think", "WhatsSoFunny",function(owner, org, timeValue)
+	if owner.PlayerClassName == "subject617" then return end
+
 	if (owner.lastBerserkLaughSoundCD or 0) < CurTime() and !org.otrub and owner:IsBerserk() and mRandom(1, 50) == 1 then
 		local phrase = (ThatPlyIsFemale(owner) and table.Random(f_laugh)) or table.Random(laugh)
 

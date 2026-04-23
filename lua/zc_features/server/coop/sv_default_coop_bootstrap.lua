@@ -1,5 +1,5 @@
--- Ensure DCity defaults to coop at startup unless an explicit alternate mode
--- was requested (e.g. !setevent / !setdod / F6 mode selection).
+-- Ensure DCity defaults to coop at startup unless a map-specific default or an
+-- explicit alternate mode was requested (e.g. !setevent / !setdod / F6 mode selection).
 
 if not SERVER then return end
 
@@ -10,21 +10,45 @@ local function lower(v)
     return string.lower(tostring(v or ""))
 end
 
-local function isExplicitAltModeForced()
+local function getMapDefaultMode()
+    local mapName = lower(game.GetMap())
+
+    if string.StartWith(mapName, "dod_") then
+        return nil, "DoD-prefixed map"
+    end
+
+    if string.StartWith(mapName, "hdn_") or string.StartWith(mapName, "ovr_") then
+        return "hidden", "Hidden-prefixed map"
+    end
+
+    return "coop"
+end
+
+local function isExplicitAltModeForced(defaultMode)
     local cv = GetConVar and GetConVar("zb_forcemode")
     local forced = cv and lower(cv:GetString()) or ""
-    return forced == "event" or forced == "dod"
+
+    if forced == "" or forced == "random" or forced == defaultMode then
+        return false
+    end
+
+    return true
 end
 
 local function setCoopDefault()
-    if isExplicitAltModeForced() then
-        print("[ZC CoopBootstrap] Skipping coop default: explicit alternate mode forced.")
+    local defaultMode, reason = getMapDefaultMode()
+    if not defaultMode then
+        print("[ZC CoopBootstrap] Skipping coop default on " .. reason .. ": " .. lower(game.GetMap()))
         return true
     end
 
-    local mapName = lower(game.GetMap())
-    if string.StartWith(mapName, "dod_") then
-        print("[ZC CoopBootstrap] Skipping coop default on DoD-prefixed map: " .. mapName)
+    if defaultMode == "hidden" then
+        print("[ZC CoopBootstrap] Hidden-prefixed map detected; coop bootstrap is disabled.")
+        return true
+    end
+
+    if isExplicitAltModeForced(defaultMode) then
+        print("[ZC CoopBootstrap] Skipping coop default: explicit alternate mode forced.")
         return true
     end
 
@@ -36,27 +60,27 @@ local function setCoopDefault()
         end
     end
 
-    if roundName == "coop" then
+    if roundName == defaultMode then
         return true
     end
 
     if GetConVar and GetConVar("zb_forcemode") then
-        RunConsoleCommand("zb_forcemode", "coop")
+        RunConsoleCommand("zb_forcemode", defaultMode)
     end
 
     if zb then
-        zb.nextround = "coop"
+        zb.nextround = defaultMode
         zb.RoundList = {}
         for i = 1, 20 do
-            zb.RoundList[i] = "coop"
+            zb.RoundList[i] = defaultMode
         end
     end
 
     if NextRound then
-        NextRound("coop")
+        NextRound(defaultMode)
     end
 
-    print("[ZC CoopBootstrap] Enforced default mode: coop")
+    print("[ZC CoopBootstrap] Enforced default mode: " .. defaultMode)
     return true
 end
 

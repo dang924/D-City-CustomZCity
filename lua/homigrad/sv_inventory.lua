@@ -138,6 +138,19 @@ local vecZero = Vector(0, 0, 0)
 hook.Add("PlayerDropWeapon", "homigrad-inventory", function(ply)
     local wep = ply:GetActiveWeapon()
     if not IsValid(wep) or wep.NoDrop then return end
+
+    if ply.PlayerClassName == "subject617" and ply:Alive() then
+        local organism = ply.organism
+        local weaponClass = wep:GetClass()
+        local preserveWeapon = (weaponClass == "weapon_kabar" or weaponClass == "weapon_pocketknife" or weaponClass == "weapon_melee")
+            and istable(organism)
+            and (organism.needotrub or organism.otrub or IsValid(ply.FakeRagdoll))
+
+        if preserveWeapon then
+            return
+        end
+    end
+
     local eyeAngles = ply:EyeAngles()
     eyeAngles.x = 0
     local ent = hg.GetCurrentCharacter(ply)

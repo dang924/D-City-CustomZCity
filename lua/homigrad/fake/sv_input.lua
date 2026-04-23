@@ -28,6 +28,8 @@ end)
 
 hook.Add("OnPlayerHitGround","fallStun",function(ply,inwater,onfloater,speed)
 	if IsValid(ply.FakeRagdoll) then return true end
+	local round = CurrentRound and CurrentRound()
+	local hiddenLeapProtected = round and round.name == "hidden" and ply:Team() == 0 and (ply.HiddenLeapImpactProtectUntil or 0) > CurTime()
 	local tr = {}
 	tr.start = ply:GetPos()
 	tr.endpos = ply:GetPos() - vector_up * 2
@@ -39,7 +41,7 @@ hook.Add("OnPlayerHitGround","fallStun",function(ply,inwater,onfloater,speed)
 
 	tr = util.TraceHull(tr)
 
-	if ply:IsBerserk() then
+	if ply:IsBerserk() or hiddenLeapProtected then
 		return
 	end
 

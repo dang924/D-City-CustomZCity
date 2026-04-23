@@ -652,7 +652,15 @@ local IsValid = IsValid
 
 		if IsValid(self.OldRagdoll) then DrawAppearance(ent, self, true) end
 		if !hg.converging[self] then
-			ent:DrawModel()
+			if CLIENT and ent.ZCSubject617Cloaked then
+				render.SetBlend((ent:GetColor().a or 28) / 255)
+				render.ModelMaterialOverride(Material("models/effects/vol_light001"))
+				ent:DrawModel()
+				render.ModelMaterialOverride(nil)
+				render.SetBlend(1)
+			else
+				ent:DrawModel()
+			end
 		else
 			DrawConversion(ent, self)
 		end
@@ -1323,12 +1331,15 @@ local IsValid = IsValid
 		end
 
 		local deploying = wep and (wep.deploy and (wep.deploy - CurTime()) > (wep.CooldownDeploy / 2) or wep.holster and (wep.holster - CurTime()) < (wep.CooldownHolster / 2))
+		local lfinger = ent != ply and ent:LookupBone("ValveBiped.Bip01_L_Finger11")
+		local lfingerAngles = lfinger and ent:GetManipulateBoneAngles(lfinger)
+		local holdingLeftFinger = lfingerAngles and math.abs(lfingerAngles[2]) > 5
 
 		return (not ((((ply:GetTable().ChatGestureWeight or 0) > 0.1 or
 			(ply:GetNWBool("TauntLeftHand", false) and ply:GetNWFloat("StartTaunt", 0) + 0.1 < CurTime()) or
 			IsValid(ply.flashlight)) and !ply:GetNetVar("handcuffed") and (wep and not wep.reload)) or
 			(deploying) or
-			(ent != ply and math.abs(ent:GetManipulateBoneAngles(ent:LookupBone("ValveBiped.Bip01_L_Finger11"))[2]) > 5 and !ply:InVehicle()) or
+			(holdingLeftFinger and !ply:InVehicle()) or
 			( ply:InVehicle() and (wep and not IsValid(wep)) and not wep.reload) and hg.isdriveablevehicle(ply:GetVehicle()) )) or ply.zmanipstart
 	end
 
