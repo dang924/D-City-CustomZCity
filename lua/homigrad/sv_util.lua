@@ -1097,22 +1097,31 @@ hook.Add( "Move", "hg_RagdollIntoWalls", function( ply, mv)
 	end
 end)
 
-if util.IsBinaryModuleInstalled("eightbit") then
-	require("eightbit")
+local eightbitLoaded = false
 
-	if eightbit.SetDamp1 then
-		eightbit.SetDamp1(0.85)
-	end
+if util.IsBinaryModuleInstalled and util.IsBinaryModuleInstalled("eightbit") then
+	local ok, err = pcall(require, "eightbit")
+	if ok and istable(eightbit) then
+		eightbitLoaded = true
 
-	if eightbit.SetProotCutoff then
-		eightbit.SetProotCutoff(0.7)
-	end
+		if eightbit.SetDamp1 then
+			eightbit.SetDamp1(0.85)
+		end
 
-	if eightbit.SetProotGain then
-		eightbit.SetProotGain(0.7)
+		if eightbit.SetProotCutoff then
+			eightbit.SetProotCutoff(0.7)
+		end
+
+		if eightbit.SetProotGain then
+			eightbit.SetProotGain(0.7)
+		end
+	else
+		MsgC(Color(255, 160, 60), "[hg] Optional module 'eightbit' failed to load: " .. tostring(err) .. "\n")
 	end
-else
-	MsgC(Color(255, 0, 0), "Eightbit module is not found! You are furry!\n")
+end
+
+if not eightbitLoaded then
+	eightbit = eightbit or {}
 end
 
 hook.Add("InitPostEntity", "ffuckk", function()

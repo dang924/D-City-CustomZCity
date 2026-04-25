@@ -19,16 +19,7 @@ local function IsEnabled()
     return cvEnabled and cvEnabled:GetBool() or false
 end
 
-local function IsWhitelistedMap()
-    local map = string.lower(game.GetMap() or "")
-    if string.find(map, "_town_", 1, true) ~= nil then return true end
-    if string.match(map, "^d3_c17_") then return true end
-    return false
-end
-
 local function OpenAllAreaPortals()
-    if not IsWhitelistedMap() then return 0 end
-
     local count = 0
     for _, portal in ipairs(ents.FindByClass("func_areaportal")) do
         if not IsValid(portal) then continue end
@@ -39,11 +30,6 @@ local function OpenAllAreaPortals()
 end
 
 local function RefreshTimer()
-    if not IsWhitelistedMap() then
-        timer.Remove("ZC_AreaPortalsForceOpenTick")
-        return
-    end
-
     local interval = cvInterval and cvInterval:GetFloat() or 10
     interval = math.max(2, interval)
 
@@ -80,14 +66,12 @@ end
 
 hook.Add("InitPostEntity", "ZC_AreaPortalsForceOpen_Init", function()
     RefreshTimer()
-    if not IsWhitelistedMap() then return end
     if not IsEnabled() then return end
     timer.Simple(0, OpenAllAreaPortals)
 end)
 
 hook.Add("PostCleanupMap", "ZC_AreaPortalsForceOpen_PostCleanup", function()
     RefreshTimer()
-    if not IsWhitelistedMap() then return end
     if not IsEnabled() then return end
     timer.Simple(0, OpenAllAreaPortals)
 end)

@@ -307,6 +307,7 @@ local ARMOR_DISPLAY_NAMES = {}
 
 -- Faction armor that should never appear in the editor (applied by playerclass)
 local ARMOR_BLACKLIST = {
+    cmb_armor=true,      cmb_helmet=true,
     combine_armor=true,  combine_helmet=true,
     metrocop_armor=true, metrocop_helmet=true,
     gordon_armor=true,   gordon_helmet=true,
@@ -317,12 +318,12 @@ local ARMOR_BLACKLIST = {
 
 local function SanitiseArmorValue(val)
     if isstring(val) then
-        return ARMOR_BLACKLIST[val] and "" or val
+        return ARMOR_BLACKLIST[string.lower(val)] and "" or val
     end
     if istable(val) and val[1] == "$random" then
         local out = { "$random" }
         for i = 2, #val do
-            if not ARMOR_BLACKLIST[tostring(val[i])] then
+            if not ARMOR_BLACKLIST[string.lower(tostring(val[i]))] then
                 out[#out+1] = val[i]
             end
         end

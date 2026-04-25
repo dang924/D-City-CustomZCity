@@ -5,6 +5,28 @@ module[1] = function(org)
 	org.timeToRandom = CurTime() + math.random(120,320)
 end
 
+local function CurrentRoundIsCoop()
+    if CurrentRound then
+        local ok, round = pcall(CurrentRound)
+        if ok and istable(round) and string.lower(tostring(round.name or "")) == "coop" then
+            return true
+        end
+    end
+
+    return string.lower(tostring(istable(zb) and zb.CROUND or "")) == "coop"
+end
+
+local COOP_DISABLED_RANDOM_EVENTS = {
+    Burp = true,
+    Cough = true,
+    Fart = true,
+    Sneeze = true,
+}
+
+local function CanTriggerRandomEvent(eventName)
+    return not (CurrentRoundIsCoop() and COOP_DISABLED_RANDOM_EVENTS[tostring(eventName or "")])
+end
+
 local RandomEvents = {
     ["Sneeze"] = function( owner, org )
         owner:EmitSound(ThatPlyIsFemale(owner) and "zcitysnd/female/sneez_"..math.random(1,4)..".mp3" or "zcitysnd/male/sneez_"..math.random(1,4)..".mp3", nil, 100 + (owner.PlayerClassName == "furry" and 20 or 0))
@@ -47,10 +69,14 @@ local RandomEvents = {
 } 
 
 function module.TriggerRandomEvent(owner, eventName)
+    if not CanTriggerRandomEvent(eventName) then return false end
     if RandomEvents[eventName] then
-        if owner:IsRagdoll() then return end
+        if owner:IsRagdoll() then return false end
         RandomEvents[eventName](owner, owner.organism)
+        return true
     end
+
+    return false
 end
 
 module[2] = function(owner, org, timeValue)
@@ -61,7 +87,16 @@ module[2] = function(owner, org, timeValue)
 		end
 
         if not org.otrub then
-            table.Random(RandomEvents)(owner,org)
+            local availableEvents = {}
+            for eventName in pairs(RandomEvents) do
+                if CanTriggerRandomEvent(eventName) then
+                    availableEvents[#availableEvents + 1] = eventName
+                end
+            end
+
+            if #availableEvents > 0 then
+                module.TriggerRandomEvent(owner, availableEvents[math.random(#availableEvents)])
+            end
         end
 
         org.timeToRandom = CurTime() + math.random(120,320)

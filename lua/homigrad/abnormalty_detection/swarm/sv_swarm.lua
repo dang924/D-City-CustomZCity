@@ -203,8 +203,9 @@ hook.Add('Think','Swarm2',function()
 end)
 
 hook.Add('PlayerDeath','Swarm',function(p) 
-	if(p.SwarmPerc>110)then 
-		CreateSwarm(p,p.SwarmPerc/65+(p.Fin or 0)) 
+	local swarmPerc = tonumber(p.SwarmPerc) or 0
+	if(swarmPerc > 110)then 
+		CreateSwarm(p,swarmPerc / 65 + (p.Fin or 0)) 
 	end 
 	p.Swm=false 
 	p.SwarmPerc=nil

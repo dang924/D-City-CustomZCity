@@ -15,6 +15,58 @@ local colWhite = Color(255, 255, 255, 255)
 local colSpect1 = Color(75, 75, 75, 255)
 local colSpect2 = Color(255, 255, 255, 255)
 
+local hiddenReadyCount = 0
+local hiddenReadyTotal = 0
+local hiddenPrepState = false
+local hiddenPrepFallbackEndsAt = 0
+
+local function getHiddenPrepDuration()
+    return math.max(tonumber(MODE and MODE.HiddenConfig and MODE.HiddenConfig.PrepDuration) or 60, 1)
+end
+
+local function getHiddenPrepRemaining()
+    if not hiddenPrepState then
+        return 0
+    end
+
+    local roundStart = zb.ROUND_START or CurTime()
+    local roundBegin = tonumber(zb.ROUND_BEGIN) or 0
+    if roundBegin > 0 and roundBegin <= CurTime() then
+        return 0
+    end
+
+    local fallbackFromRoundStart = roundStart + getHiddenPrepDuration()
+    local prepEndAt = roundBegin > CurTime() and roundBegin or math.max(hiddenPrepFallbackEndsAt, fallbackFromRoundStart)
+
+    return math.max(prepEndAt - CurTime(), 0)
+end
+
+local function drawHiddenStatusBar(x, y, w, h, fraction, fillColor, label)
+    local clamped = math.Clamp(tonumber(fraction) or 0, 0, 1)
+
+    surface.SetDrawColor(10, 10, 10, 180)
+    surface.DrawRect(x, y, w, h)
+
+    local innerW = math.max(w - 2, 0)
+    local innerH = math.max(h - 2, 0)
+    local fillW = math.floor(innerW * clamped)
+
+    if fillW > 0 then
+        surface.SetDrawColor(fillColor.r, fillColor.g, fillColor.b, 220)
+        surface.DrawRect(x + 1, y + 1, fillW, innerH)
+    end
+
+    surface.SetDrawColor(255, 255, 255, 35)
+    surface.DrawOutlinedRect(x, y, w, h, 1)
+end
+
+local function isHiddenIrisPrepSpectator()
+    return IsValid(lply)
+        and lply:Team() == 1
+        and not lply:Alive()
+    and getHiddenPrepRemaining() > 0
+end
+
 BlurBackground = BlurBackground or hg.DrawBlur
 
 local function stopHiddenRoundTheme()
@@ -40,6 +92,8 @@ end
 net.Receive("hidden_start", function()
     surface.PlaySound("ambient/levels/citadel/weapon_disintegrate2.wav")
     startHiddenRoundTheme()
+    hiddenPrepState = true
+    hiddenPrepFallbackEndsAt = CurTime() + getHiddenPrepDuration()
     zb.RemoveFade()
 end)
 
@@ -49,6 +103,34 @@ net.Receive("hidden_roundend", function()
     stopHiddenRoundTheme()
 
     CreateEndMenu(winner)
+end)
+
+net.Receive("hidden_ready_sync", function()
+    hiddenReadyCount = net.ReadUInt(8)
+    hiddenReadyTotal = net.ReadUInt(8)
+end)
+
+net.Receive("hidden_prep_state", function()
+    local isPreparation = net.ReadBool()
+    local combatStart = net.ReadFloat()
+    local combatDuration = net.ReadFloat()
+    hiddenPrepState = isPreparation and true or false
+
+    if hiddenPrepState then
+        hiddenPrepFallbackEndsAt = math.max(CurTime() + getHiddenPrepDuration(), tonumber(zb.ROUND_BEGIN) or 0)
+    else
+        hiddenPrepFallbackEndsAt = 0
+        -- Server has reset the round clock for the combat phase. Mirror those values
+        -- locally so the HUD timer drops to the configured combat duration (e.g. 4:00)
+        -- whether prep ended via the ready system or the timer expiring.
+        if combatStart and combatStart > 0 then
+            zb.ROUND_START = combatStart
+            zb.ROUND_BEGIN = combatStart
+        end
+        if combatDuration and combatDuration > 0 then
+            zb.ROUND_TIME = combatDuration
+        end
+    end
 end)
 
 local teams = {
@@ -148,6 +230,7 @@ CreateEndMenu = function(winner)
     end
 
     for _, ply in player.Iterator() do
+        if not IsValid(ply) then continue end
         if ply:Team() == TEAM_SPECTATOR then continue end
 
         local button = vgui.Create("DButton", scrollPanel)
@@ -157,6 +240,16 @@ CreateEndMenu = function(winner)
         button:SetText("")
 
         button.Paint = function(self, w, h)
+            if not IsValid(ply) then
+                surface.SetDrawColor(colGray.r, colGray.g, colGray.b, colGray.a)
+                surface.DrawRect(0, 0, w, h)
+                surface.SetFont("ZB_InterfaceMediumLarge")
+                surface.SetTextColor(colSpect2.r, colSpect2.g, colSpect2.b, colSpect2.a)
+                surface.SetTextPos(15, h / 2 - 8)
+                surface.DrawText("Disconnected")
+                return
+            end
+
             local isWinner = winner ~= nil and ply:Team() == winner
             local alive = ply:Alive()
             local topColor = colGray
@@ -202,6 +295,8 @@ CreateEndMenu = function(winner)
         end
 
         button.DoClick = function()
+            if not IsValid(ply) then return end
+
             if ply:IsBot() then
                 chat.AddText(Color(255, 0, 0), "no, you can't")
                 return
@@ -215,6 +310,12 @@ CreateEndMenu = function(winner)
 end
 
 function MODE:RenderScreenspaceEffects()
+    if isHiddenIrisPrepSpectator() then
+        surface.SetDrawColor(0, 0, 0, 255)
+        surface.DrawRect(-1, -1, ScrW() + 1, ScrH() + 1)
+        return
+    end
+
     if zb.ROUND_START + 7.5 < CurTime() then return end
 
     local fade = math.Clamp(zb.ROUND_START + 7.5 - CurTime(), 0, 1)
@@ -225,28 +326,50 @@ end
 function MODE:HUDPaint()
     local roundStart = zb.ROUND_START or CurTime()
     local roundTime = math.max(roundStart + (zb.ROUND_TIME or self.ROUND_TIME or 240) - CurTime(), 0)
-    local prepTime = math.max((zb.ROUND_BEGIN or roundStart) - CurTime(), 0)
+    local prepTime = getHiddenPrepRemaining()
     local teamInfo = teams[lply:Team()] or teams[1]
     local timerText
     local timerColor
 
-    if prepTime > 0 then
-        timerText = "PREP " .. string.FormattedTime(prepTime, "%02i:%02i:%02i")
-        timerColor = Color(255, 220, 120)
-    else
-        timerText = "TIME " .. string.FormattedTime(roundTime, "%02i:%02i:%02i")
-        timerColor = Color(255, 255, 255)
-    end
+    timerText = "TIME " .. string.FormattedTime(roundTime, "%02i:%02i:%02i")
+    timerColor = Color(255, 255, 255)
 
     draw.SimpleText(timerText, "ZB_HomicideMedium", sw * 0.5, sh * 0.15, timerColor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+
+    -- Dedicated PREP timer rendered directly under the TIME line so every player
+    -- (Subject 617 included) can see exactly when the prep phase will end.
+    if prepTime > 0 then
+        local prepText = "PREP " .. string.FormattedTime(prepTime, "%02i:%02i:%02i")
+        draw.SimpleText(prepText, "ZB_HomicideMedium", sw * 0.5, sh * 0.19, Color(255, 220, 120), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+
+    if prepTime > 0 then
+        local prepDuration = getHiddenPrepDuration()
+        local prepFraction = math.Clamp(prepTime / prepDuration, 0, 1)
+        local prepLabel = "Prep " .. string.FormattedTime(prepTime, "%02i:%02i")
+        drawHiddenStatusBar(sw * 0.35, sh * 0.175, sw * 0.30, 18, prepFraction, Color(245, 188, 72), prepLabel)
+    end
+
+    if isHiddenIrisPrepSpectator() then
+        draw.SimpleText("IRIS prep phase", "ZB_HomicideMediumLarge", sw * 0.5, sh * 0.46, Color(235, 235, 235), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("You are locked out until prep ends.", "ZB_HomicideMedium", sw * 0.5, sh * 0.52, Color(200, 200, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        
+        local readyText = "Players ready: " .. hiddenReadyCount .. " / " .. hiddenReadyTotal
+        local readyColor = hiddenReadyCount >= hiddenReadyTotal and hiddenReadyTotal > 0 and Color(120, 255, 120) or Color(75, 155, 235)
+        draw.SimpleText(readyText, "ZB_HomicideMedium", sw * 0.5, sh * 0.58, readyColor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        
+        draw.SimpleText("If the loadout editor closes, open console and run: zb_hidden_loadout", "ZB_HomicideMedium", sw * 0.5, sh * 0.64, Color(255, 220, 120), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        return
+    end
 
     if prepTime <= 0 and lply:Team() == 0 and lply:Alive() then
         local leapReadyAt = lply:GetNWFloat("HiddenNextLeap", 0)
         local cooldown = math.max(leapReadyAt - CurTime(), 0)
-        local leapText = (cooldown <= 0 and "Leap ready" or ("Leap in " .. string.format("%.1f", cooldown) .. "s"))
-        local leapColor = (cooldown <= 0 and Color(120, 255, 120) or Color(255, 150, 150))
+        local leapCooldownText = (cooldown <= 0 and "Leap cooldown: ready" or ("Leap cooldown: " .. string.format("%.1f", cooldown) .. "s"))
+        local leapCooldown = math.max(tonumber(self.HiddenConfig and self.HiddenConfig.LeapCooldown) or 6, 0.1)
+        local leapCooldownFraction = math.Clamp(1 - (cooldown / leapCooldown), 0, 1)
 
-        draw.SimpleText(leapText, "ZB_HomicideMedium", sw * 0.5, sh * 0.9, leapColor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        drawHiddenStatusBar(sw * 0.35, sh * 0.915, sw * 0.30, 18, leapCooldownFraction, Color(120, 255, 120), leapCooldownText)
     end
 
     if zb.ROUND_START + 8.5 < CurTime() then return end

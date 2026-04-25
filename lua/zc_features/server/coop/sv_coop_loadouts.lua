@@ -370,6 +370,8 @@ local function GetDefaultCoopLoadouts()
 end
 
 local STRIP_FACTION_ARMOR_VALUES = {
+    cmb_armor = true,
+    cmb_helmet = true,
     combine_armor = true,
     combine_helmet = true,
     metrocop_armor = true,
@@ -443,13 +445,13 @@ local function SanitiseCoopArmorTable(armorTbl)
             for i, entry in ipairs(val) do
                 if i == 1 then
                     filtered[1] = entry
-                elseif not STRIP_FACTION_ARMOR_VALUES[tostring(entry)] then
+                elseif not STRIP_FACTION_ARMOR_VALUES[string.lower(tostring(entry))] then
                     filtered[#filtered + 1] = entry
                 end
             end
             out[slot] = (#filtered <= 1) and "" or filtered
         elseif isstring(val) then
-            out[slot] = STRIP_FACTION_ARMOR_VALUES[val] and "" or val
+            out[slot] = STRIP_FACTION_ARMOR_VALUES[string.lower(val)] and "" or val
         else
             out[slot] = val
         end
@@ -740,10 +742,12 @@ end
 _G.ZC_SendCoopLoadouts = SendCoopLoadouts
 
 -- Build and send the list of registered armor keys per slot from hg.armor.
--- Filters out faction-specific armor (combine_armor, combine_helmet,
--- metrocop_armor, metrocop_helmet, gordon_*) which are auto-applied by
--- playerclass and should not appear in the loadout editor.
+-- Filters out faction-specific armor (cmb_armor/cmb_helmet,
+-- metrocop_armor/metrocop_helmet, gordon_*, plus legacy combine_* aliases)
+-- which are auto-applied by playerclass and should not appear in the loadout editor.
 local ARMOR_FACTION_BLACKLIST = {
+    cmb_armor           = true,
+    cmb_helmet          = true,
     combine_armor       = true,
     combine_helmet      = true,
     metrocop_armor      = true,
@@ -1463,6 +1467,7 @@ local function ApplyCoopLoadoutPreset(ply, presetName)
         local function IsArmorAllowedForCurrentClass(armorClass)
             local cls = tostring(ply.PlayerClassName or "")
             if string.StartWith(armorClass, "gordon_") then return cls == "Gordon" end
+            if string.StartWith(armorClass, "cmb_") then return cls == "Combine" end
             if string.StartWith(armorClass, "combine_") then return cls == "Combine" end
             if string.StartWith(armorClass, "metrocop_") then return cls == "Metrocop" end
             return true
@@ -1503,6 +1508,13 @@ local function ApplyCoopLoadoutPreset(ply, presetName)
 
         if pcall(function() return ply.SyncArmor end) and ply.SyncArmor then
             pcall(function() ply:SyncArmor() end)
+        end
+    end
+
+    if _G.ZC_ApplyPlayerClassArmor then
+        local ok, classArmorApplied = pcall(_G.ZC_ApplyPlayerClassArmor, ply)
+        if ok and classArmorApplied then
+            applied = true
         end
     end
 

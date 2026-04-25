@@ -273,6 +273,68 @@ function SWEP:ChangeFOV()
 	self.ZoomFOV = math.Clamp(self.ZoomFOV - (delta / 10 or 0), self.FOVMin, self.FOVMax)
 end
 
+-- Thermal scope silhouette pass: only renders inside a thermal scope's RT view
+local HG_THERMAL_HALO_COL = Color(255, 255, 255)
+hook.Add("PreDrawHalos", "HG_ThermalScopeSilhouettes", function()
+	local scope = RENDERING_SCOPE
+	if not scope or scope == false then return end
+	if not scope.HasAttachment then return end
+
+	local _, foundatt = scope:HasAttachment("sight", "optic")
+	if not foundatt or not foundatt.thermal then return end
+
+	local lp = LocalPlayer()
+	local eye = EyePos()
+	local list = {}
+	local seen = {}
+
+	local function tryAdd(ent)
+		if not IsValid(ent) or seen[ent] then return end
+		if ent:IsDormant() then return end
+		if ent:GetPos():DistToSqr(eye) > 25000000 then return end
+		seen[ent] = true
+		list[#list + 1] = ent
+	end
+
+	for _, ent in ipairs(ents.GetAll()) do
+		if ent == lp then continue end
+
+		if ent:IsPlayer() then
+			if ent:Team() == TEAM_SPECTATOR then continue end
+			if not ent:Alive() then continue end
+
+			-- Ragdolled-but-alive players (downed via hg.FakeUp, Subject 617 leap,
+			-- etc.) hide the player entity and route their visible body through
+			-- ply.FakeRagdoll. The player entity stays at the ragdoll's position
+			-- but isn't drawn, so haloing it produces nothing. Halo the ragdoll
+			-- instead so thermal sights still light them up.
+			local fake = ent.FakeRagdoll
+			if not IsValid(fake) then
+				fake = ent:GetNWEntity("FakeRagdoll")
+			end
+
+			if IsValid(fake) then
+				tryAdd(fake)
+			else
+				tryAdd(ent)
+			end
+		elseif ent:IsNPC() or ent:IsNextBot() then
+			local fake = ent.FakeRagdoll
+			if IsValid(fake) then
+				tryAdd(fake)
+			else
+				tryAdd(ent)
+			end
+		end
+	end
+
+	if #list == 0 then return end
+	-- ignoreZ = false: walls, brushes, and solid props occlude the halo so the
+	-- thermal signature is hidden behind cover. Particle effects like smoke
+	-- grenades don't write to depth, so the silhouette still bleeds through smoke.
+	halo.Add(list, HG_THERMAL_HALO_COL, 8, 8, 2, true, false)
+end)
+
 --
 local vecZero = Vector(0, 0, 0)
 local function WorldToScreen(vWorldPos, vPos, vScale, aRot, verticalScale)

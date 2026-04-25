@@ -9,6 +9,10 @@ MODE.HiddenConfig.SecondaryAmmoMultiplier = MODE.HiddenConfig.SecondaryAmmoMulti
 MODE.HiddenConfig.DefaultIrisLoadout = MODE.HiddenConfig.DefaultIrisLoadout or {
     primary = "weapon_mp5",
     secondary = "weapon_glock17",
+    attachments = {
+        primary = {},
+        secondary = {},
+    },
     armor = {
         torso = "vest3",
         head = "helmet1",
@@ -22,6 +26,15 @@ MODE.HiddenLoadoutArmorSlots = {
     "head",
     "face",
     "ears",
+}
+
+MODE.HiddenLoadoutAttachmentSlots = {
+    "barrel",
+    "mount",
+    "sight",
+    "underbarrel",
+    "grip",
+    "magwell",
 }
 
 local weaponBlacklist = {
@@ -52,6 +65,12 @@ local weaponBlacklist = {
 }
 
 local armorSlots = MODE.HiddenLoadoutArmorSlots
+local attachmentSlots = MODE.HiddenLoadoutAttachmentSlots
+local attachmentSlotLookup = {}
+
+for _, slotName in ipairs(attachmentSlots) do
+    attachmentSlotLookup[slotName] = true
+end
 
 local function clampNumber(value, fallback)
     local numberValue = tonumber(value)
@@ -72,6 +91,127 @@ local function normalizeArmorKey(armorKey)
     return armorKey
 end
 
+local function normalizeAttachmentKey(attKey)
+    if not isstring(attKey) then
+        return ""
+    end
+
+    attKey = string.Trim(string.lower(attKey))
+    attKey = string.Replace(attKey, "ent_att_", "")
+    if attKey == "empty" then
+        return ""
+    end
+
+    return attKey
+end
+
+local function resolveAttachmentName(attKey)
+    local dict = hg and (hg.attachmentslaunguage or hg.attachmentslanguage) or nil
+    attKey = tostring(attKey or "")
+
+    if istable(dict) and isstring(dict[attKey]) and dict[attKey] ~= "" then
+        return dict[attKey]
+    end
+
+    local label = string.gsub(attKey, "_", " ")
+    label = string.gsub(label, "(%a)([%w_']*)", function(first, rest)
+        return string.upper(first) .. string.lower(rest)
+    end)
+
+    return label ~= "" and label or attKey
+end
+
+local function isMountTypeCompatible(availableMountType, attachmentMountType)
+    if not availableMountType or not attachmentMountType then
+        return false
+    end
+
+    if istable(availableMountType) then
+        return table.HasValue(availableMountType, attachmentMountType)
+    end
+
+    return tostring(availableMountType) == tostring(attachmentMountType)
+end
+
+local function addAttachmentOption(entries, seen, placement, attKey)
+    attKey = normalizeAttachmentKey(attKey)
+    if seen[attKey] then
+        return
+    end
+
+    -- Hidden admin blacklist: skip non-empty attachment keys flagged by superadmins.
+    if attKey ~= "" and MODE.IsHiddenAdminBlacklisted and MODE:IsHiddenAdminBlacklisted("attachment", attKey) then
+        return
+    end
+
+    local iconMap = hg and hg.attachmentsIcons or nil
+    local score = 0
+    if MODE.GetHiddenAdminScoreOverride and attKey ~= "" then
+        local override = MODE:GetHiddenAdminScoreOverride("attachment", attKey)
+        if override and override > 0 then
+            score = override
+        end
+    end
+    seen[attKey] = true
+    entries[#entries + 1] = {
+        key = attKey,
+        name = attKey == "" and "None" or resolveAttachmentName(attKey),
+        placement = tostring(placement or ""),
+        icon = attKey ~= "" and tostring(iconMap and iconMap[attKey] or "") or "",
+        score = score,
+    }
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Hidden loadout admin overrides (per-server, persisted via sv_hidden_loadout_admin.lua)
+-- Provides per-key score overrides and blacklists for weapons/armor/attachments.
+-- The data table is populated server-side from disk and synced to clients so the
+-- shared score helpers see the same values on both realms.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+MODE.HiddenAdminData = MODE.HiddenAdminData or {
+    scoreOverrides = { weapon = {}, armor = {}, attachment = {} },
+    blacklist      = { weapon = {}, armor = {}, attachment = {} },
+}
+
+local function ensureHiddenAdminBucket(self)
+    self.HiddenAdminData = self.HiddenAdminData or {}
+    self.HiddenAdminData.scoreOverrides = self.HiddenAdminData.scoreOverrides or {}
+    self.HiddenAdminData.blacklist      = self.HiddenAdminData.blacklist or {}
+    for _, kind in ipairs({"weapon", "armor", "attachment"}) do
+        self.HiddenAdminData.scoreOverrides[kind] = self.HiddenAdminData.scoreOverrides[kind] or {}
+        self.HiddenAdminData.blacklist[kind]      = self.HiddenAdminData.blacklist[kind] or {}
+    end
+end
+
+function MODE:GetHiddenAdminData()
+    ensureHiddenAdminBucket(self)
+    return self.HiddenAdminData
+end
+
+function MODE:GetHiddenAdminScoreOverride(kind, key)
+    if not isstring(kind) or not isstring(key) or key == "" then return nil end
+    ensureHiddenAdminBucket(self)
+    local bucket = self.HiddenAdminData.scoreOverrides[kind]
+    if not istable(bucket) then return nil end
+    local override = tonumber(bucket[string.lower(key)])
+    if override == nil then return nil end
+    return math.max(0, math.floor(override + 0.5))
+end
+
+function MODE:IsHiddenAdminBlacklisted(kind, key)
+    if not isstring(kind) or not isstring(key) or key == "" then return false end
+    ensureHiddenAdminBucket(self)
+    local bucket = self.HiddenAdminData.blacklist[kind]
+    return istable(bucket) and bucket[string.lower(key)] == true
+end
+
+function MODE:CalculateHiddenAttachmentScore(attKey)
+    if not isstring(attKey) or attKey == "" then return 0 end
+    local override = self:GetHiddenAdminScoreOverride("attachment", attKey)
+    return override and math.max(0, override) or 0
+end
+
 function MODE:IsHiddenPreparationPhase()
     return (zb.ROUND_BEGIN or 0) > CurTime()
 end
@@ -80,10 +220,18 @@ function MODE:GetHiddenLoadoutSlots()
     return armorSlots
 end
 
+function MODE:GetHiddenLoadoutAttachmentSlots()
+    return attachmentSlots
+end
+
 function MODE:GetDefaultHiddenLoadout()
     return table.Copy(self.HiddenConfig.DefaultIrisLoadout or {
         primary = "",
         secondary = "",
+        attachments = {
+            primary = {},
+            secondary = {},
+        },
         armor = {},
     })
 end
@@ -92,12 +240,155 @@ function MODE:NormalizeHiddenArmorKey(armorKey)
     return normalizeArmorKey(armorKey)
 end
 
+function MODE:NormalizeHiddenAttachmentKey(attKey)
+    return normalizeAttachmentKey(attKey)
+end
+
+function MODE:GetHiddenAttachmentPlacement(attKey)
+    attKey = normalizeAttachmentKey(attKey)
+    if attKey == "" or not hg or not istable(hg.attachments) then
+        return nil
+    end
+
+    for placement, placementTable in pairs(hg.attachments) do
+        if attachmentSlotLookup[placement] and istable(placementTable) and placementTable[attKey] then
+            return placement
+        end
+    end
+
+    return nil
+end
+
+function MODE:BuildHiddenAttachmentOptionsForWeapon(className)
+    local optionsByPlacement = {}
+
+    for _, placement in ipairs(attachmentSlots) do
+        optionsByPlacement[placement] = {
+            {
+                key = "",
+                name = "None",
+                placement = placement,
+                icon = "",
+            },
+        }
+    end
+
+    className = string.Trim(string.lower(tostring(className or "")))
+    if className == "" then
+        return optionsByPlacement
+    end
+
+    local storedWeapon = weapons.GetStored(className)
+    if not istable(storedWeapon) or not istable(storedWeapon.availableAttachments) then
+        return optionsByPlacement
+    end
+
+    local hgAttachments = hg and hg.attachments or {}
+
+    for _, placement in ipairs(attachmentSlots) do
+        local entries = optionsByPlacement[placement]
+        local seen = {
+            [""] = true,
+        }
+        local placementOptions = storedWeapon.availableAttachments[placement]
+
+        if istable(placementOptions) then
+            if placementOptions.cannotremove then
+                entries[1] = nil
+                seen[""] = nil
+            end
+
+            for index = 1, #placementOptions do
+                local option = placementOptions[index]
+                if istable(option) and isstring(option[1]) then
+                    addAttachmentOption(entries, seen, placement, option[1])
+                end
+            end
+
+            local placementTable = istable(hgAttachments) and hgAttachments[placement] or nil
+            local mountType = placementOptions.mountType
+            if istable(placementTable) and mountType then
+                for attKey, attData in pairs(placementTable) do
+                    if isstring(attKey) and istable(attData) and isMountTypeCompatible(mountType, attData.mountType) then
+                        addAttachmentOption(entries, seen, placement, attKey)
+                    end
+                end
+            end
+
+            if placement == "underbarrel" and istable(placementTable) then
+                for attKey, attData in pairs(placementTable) do
+                    local keyLower = isstring(attKey) and string.lower(attKey) or ""
+                    if keyLower ~= "" and string.find(keyLower, "laser", 1, true) then
+                        if mountType and istable(attData) and attData.mountType then
+                            if isMountTypeCompatible(mountType, attData.mountType) then
+                                addAttachmentOption(entries, seen, placement, attKey)
+                            end
+                        elseif not mountType then
+                            addAttachmentOption(entries, seen, placement, attKey)
+                        end
+                    end
+                end
+            end
+        end
+
+        table.sort(entries, function(left, right)
+            if tostring(left.key or "") == "" then
+                return true
+            end
+
+            if tostring(right.key or "") == "" then
+                return false
+            end
+
+            return string.lower(tostring(left.name or "")) < string.lower(tostring(right.name or ""))
+        end)
+    end
+
+    return optionsByPlacement
+end
+
+function MODE:NormalizeHiddenWeaponAttachments(className, attachments)
+    local normalized = {}
+    local optionsByPlacement = self:BuildHiddenAttachmentOptionsForWeapon(className)
+
+    attachments = istable(attachments) and attachments or {}
+
+    for _, placement in ipairs(attachmentSlots) do
+        local chosenKey = normalizeAttachmentKey(attachments[placement])
+        local hasChoice = false
+        local fallbackKey = ""
+
+        for _, entry in ipairs(optionsByPlacement[placement] or {}) do
+            local entryKey = normalizeAttachmentKey(entry.key)
+            if fallbackKey == "" then
+                fallbackKey = entryKey
+            end
+
+            if entryKey == chosenKey then
+                normalized[placement] = entryKey
+                hasChoice = true
+                break
+            end
+        end
+
+        if not hasChoice then
+            normalized[placement] = fallbackKey
+        end
+    end
+
+    return normalized
+end
+
 function MODE:NormalizeHiddenLoadout(loadout)
     local defaultLoadout = self:GetDefaultHiddenLoadout()
     local hasSecondarySelection = istable(loadout) and loadout.secondary ~= nil
     local normalized = {
         primary = "",
         secondary = "",
+        attachments = {
+            primary = {},
+            secondary = {},
+        },
         armor = {},
     }
 
@@ -121,10 +412,15 @@ function MODE:NormalizeHiddenLoadout(loadout)
 
     local sourceArmor = istable(loadout) and istable(loadout.armor) and loadout.armor or {}
     local defaultArmor = istable(defaultLoadout.armor) and defaultLoadout.armor or {}
+    local sourceAttachments = istable(loadout) and istable(loadout.attachments) and loadout.attachments or {}
+    local defaultAttachments = istable(defaultLoadout.attachments) and defaultLoadout.attachments or {}
 
     for _, slotName in ipairs(armorSlots) do
         normalized.armor[slotName] = normalizeArmorKey(sourceArmor[slotName] or defaultArmor[slotName])
     end
+
+    normalized.attachments.primary = self:NormalizeHiddenWeaponAttachments(normalized.primary, sourceAttachments.primary or defaultAttachments.primary)
+    normalized.attachments.secondary = self:NormalizeHiddenWeaponAttachments(normalized.secondary, sourceAttachments.secondary or defaultAttachments.secondary)
 
     return normalized
 end
@@ -139,8 +435,26 @@ function MODE:IsHiddenWeaponAllowed(storedWeapon, className)
         return false
     end
 
+    if self:IsHiddenAdminBlacklisted("weapon", className) then
+        return false
+    end
+
     if storedWeapon.AdminOnly then
         return false
+    end
+
+    -- Opt-in bypass for non-firearm hg utility tablets (e.g. the Solitron
+    -- heartbeat sensor) that shouldn't have to satisfy the damage/clip/Base
+    -- = "homigrad_base" gate but should still appear in the IRIS pool.
+    if storedWeapon.HiddenLoadoutAllow then
+        local slotHint = tostring(storedWeapon.HiddenLoadoutSlot or "")
+        if slotHint == "primary" or slotHint == "secondary" then
+            return true
+        end
+        local invCat = clampNumber(storedWeapon.weaponInvCategory, 0)
+        if invCat == 1 or invCat == 2 then
+            return true
+        end
     end
 
     if string.lower(tostring(storedWeapon.Base or "")) ~= "homigrad_base" then
@@ -166,6 +480,15 @@ function MODE:IsHiddenWeaponAllowed(storedWeapon, className)
 end
 
 function MODE:GetHiddenWeaponSlot(storedWeapon)
+    -- Honour an explicit slot tag first so opt-in utility weapons (radar etc.)
+    -- can land in the secondary pool regardless of weaponInvCategory quirks.
+    if istable(storedWeapon) and isstring(storedWeapon.HiddenLoadoutSlot) then
+        local slotHint = string.Trim(string.lower(storedWeapon.HiddenLoadoutSlot))
+        if slotHint == "primary" or slotHint == "secondary" then
+            return slotHint
+        end
+    end
+
     local inventoryCategory = clampNumber(storedWeapon and storedWeapon.weaponInvCategory, 0)
 
     if inventoryCategory == 1 then
@@ -194,7 +517,21 @@ function MODE:GetHiddenWeaponStats(storedWeapon)
     }
 end
 
-function MODE:CalculateHiddenWeaponScore(storedWeapon)
+function MODE:CalculateHiddenWeaponScore(storedWeapon, classNameHint)
+    -- SWEP-declared score override: utility tablets (radar etc.) opt in via
+    -- HiddenLoadoutScore so their loadout cost isn't auto-derived from a
+    -- fake damage stat. Admin file override (handled below) still wins.
+    if istable(storedWeapon) and tonumber(storedWeapon.HiddenLoadoutScore) then
+        local declared = math.max(0, math.floor(tonumber(storedWeapon.HiddenLoadoutScore) + 0.5))
+        if self.GetHiddenAdminScoreOverride and isstring(classNameHint) and classNameHint ~= "" then
+            local override = self:GetHiddenAdminScoreOverride("weapon", classNameHint)
+            if override ~= nil then
+                return override
+            end
+        end
+        return declared
+    end
+
     local stats = self:GetHiddenWeaponStats(storedWeapon)
     local dps = stats.wait > 0 and (stats.damage / stats.wait) or stats.damage
     local score = (stats.damage * 0.4)
@@ -208,12 +545,31 @@ function MODE:CalculateHiddenWeaponScore(storedWeapon)
         score = score + 4
     end
 
-    return math.max(0, math.floor(math.min(score, 120) + 0.5))
+    score = math.max(0, math.floor(math.min(score, 120) + 0.5))
+
+    -- Admin-set score override (superadmin-managed; takes priority over computed score).
+    local className = classNameHint
+    if not isstring(className) or className == "" then
+        className = tostring(storedWeapon and (storedWeapon.ClassName or storedWeapon.Classname) or "")
+    end
+    className = string.lower(string.Trim(tostring(className or "")))
+    if className ~= "" then
+        local override = self:GetHiddenAdminScoreOverride("weapon", className)
+        if override ~= nil then
+            return math.Clamp(override, 0, 120)
+        end
+    end
+
+    return score
 end
 
 function MODE:IsHiddenArmorAllowed(armorKey)
     armorKey = normalizeArmorKey(armorKey)
     if armorKey == "" or not hg or not hg.armor or not hg.GetArmorPlacement then
+        return false
+    end
+
+    if self:IsHiddenAdminBlacklisted("armor", armorKey) then
         return false
     end
 
@@ -268,6 +624,15 @@ function MODE:CalculateHiddenArmorScore(armorKey)
     local stats = self:GetHiddenArmorStats(armorKey)
     if not stats then
         return 0
+    end
+
+    -- Admin-set score override takes priority over computed score.
+    local normalizedKey = normalizeArmorKey(armorKey)
+    if normalizedKey ~= "" then
+        local override = self:GetHiddenAdminScoreOverride("armor", normalizedKey)
+        if override ~= nil then
+            return math.Clamp(override, 0, 120)
+        end
     end
 
     local slotBonus = 0

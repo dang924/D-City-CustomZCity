@@ -1332,7 +1332,7 @@ local IsValid = IsValid
 
 		local deploying = wep and (wep.deploy and (wep.deploy - CurTime()) > (wep.CooldownDeploy / 2) or wep.holster and (wep.holster - CurTime()) < (wep.CooldownHolster / 2))
 		local lfinger = ent != ply and ent:LookupBone("ValveBiped.Bip01_L_Finger11")
-		local lfingerAngles = lfinger and ent:GetManipulateBoneAngles(lfinger)
+		local lfingerAngles = isnumber(lfinger) and lfinger >= 0 and ent:GetManipulateBoneAngles(lfinger)
 		local holdingLeftFinger = lfingerAngles and math.abs(lfingerAngles[2]) > 5
 
 		return (not ((((ply:GetTable().ChatGestureWeight or 0) > 0.1 or

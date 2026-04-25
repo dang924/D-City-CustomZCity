@@ -1372,7 +1372,7 @@ local function velocityDamage(ent, data)
 	if data.HitEntity.Throwable then return end
 	local owner = ent:IsRagdoll() and hg.RagdollOwner(ent) or ent
 	local round = CurrentRound and CurrentRound()
-	local hiddenLeapProtected = IsValid(owner) and owner:IsPlayer() and round and round.name == "hidden" and owner:Team() == 0 and (owner.HiddenLeapImpactProtectUntil or 0) > CurTime()
+	local hiddenLeapProtected = (IsValid(owner) and owner:IsPlayer() and round and round.name == "hidden" and owner:Team() == 0 and (owner.HiddenLeapImpactProtectUntil or 0) > CurTime()) or (ZC_IsSubject617LeapProtected and ZC_IsSubject617LeapProtected(owner))
 	if hiddenLeapProtected then return end
 	
 	if !data.HitEntity:IsWorld() and data.HitEntity.lasttouched and data.HitEntity.lasttouched[ent] then
@@ -1654,7 +1654,7 @@ hook.Add("Player Getup", "huyhhgss", function(ply)
 		local force = vel:Length() * (data.HitObject:GetEntity():GetPhysicsObject():GetMass() / 24)
 		if (force) > needed then 
 			local round = CurrentRound and CurrentRound()
-			local hiddenLeapProtected = round and round.name == "hidden" and ply:Team() == 0 and (ply.HiddenLeapImpactProtectUntil or 0) > CurTime()
+			local hiddenLeapProtected = (round and round.name == "hidden" and ply:Team() == 0 and (ply.HiddenLeapImpactProtectUntil or 0) > CurTime()) or (ZC_IsSubject617LeapProtected and ZC_IsSubject617LeapProtected(ply))
 			if ply:IsBerserk() or hiddenLeapProtected then -- unstoppable
 				return
 			end

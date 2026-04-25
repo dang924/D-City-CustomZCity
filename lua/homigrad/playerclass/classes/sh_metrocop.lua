@@ -3,7 +3,7 @@ local CLASS = player.RegClass("Metrocop")
 
 
 local combine_models = {
-    "models/player_hl2_combine_grunt.mdl"
+    "models/player/police.mdl"
 }
 
 
@@ -140,7 +140,8 @@ local function TryApplyManagedCoopLoadout(ply, subClass)
         resolvedSubClass = "metropolice"
     end
 
-    local ok, applied = pcall(_G.ZC_ApplyCoopLoadout, ply, resolvedSubClass, "Metrocop")
+    local baseClass = tostring(ply.PlayerClassName or "Metrocop")
+    local ok, applied = pcall(_G.ZC_ApplyCoopLoadout, ply, resolvedSubClass, baseClass)
     return ok and applied == true
 end
 
@@ -174,16 +175,16 @@ function CLASS.On(self, data)
 
     self.organism.CantCheckPulse = true
 
-    --;; Армор
-    self.armors = {}
-    self.armors["torso"] = "metrocop_armor"
-    self.armors["head"] = "metrocop_helmet"
-    self:SyncArmor()
-
+    local managedLoadoutApplied = false
     if not data.bNoEquipment then
-        if not TryApplyManagedCoopLoadout(self, sub) then
+        managedLoadoutApplied = TryApplyManagedCoopLoadout(self, sub)
+        if not managedLoadoutApplied then
             giveSubClassLoadout(self, sub)
         end
+    end
+
+    if not managedLoadoutApplied and _G.ZC_ApplyPlayerClassArmor then
+        pcall(_G.ZC_ApplyPlayerClassArmor, self)
     end
 
     self.subClass = nil

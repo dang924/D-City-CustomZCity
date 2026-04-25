@@ -538,12 +538,26 @@ local DEFAULT_CLASSES    = { "Rebel", "Refugee", "Gordon", "Combine", "Metrocop"
 
 ZC_EventClasses = {}
 
+local function NormalizeKnownEventClassName(name)
+    name = TrimClassToken(name)
+    if name == "" then return "" end
+
+    local key = string.lower(name)
+    if key == "gordon" or key == "freeman" then return "Gordon" end
+    if key == "rebel" or key == "resistance" then return "Rebel" end
+    if key == "refugee" or key == "refuge" or key == "citizen" then return "Refugee" end
+    if key == "combine" or key == "overwatch" then return "Combine" end
+    if key == "metrocop" or key == "metropolice" or key == "civilprotection" or key == "civil_protection" then return "Metrocop" end
+
+    return name
+end
+
 local function BuildMergedEventClassList(saved)
     local out = {}
     local seen = {}
 
     local function addOne(name)
-        name = TrimClassToken(name)
+        name = NormalizeKnownEventClassName(name)
         if name == "" then return end
 
         local key = string.lower(name)
@@ -566,6 +580,14 @@ local function BuildMergedEventClassList(saved)
     if istable(player and player.classList) then
         for name in pairs(player.classList) do
             addOne(name)
+        end
+    end
+
+    local classFiles = file.Find("homigrad/playerclass/classes/sh_*.lua", "LUA") or {}
+    for _, fileName in ipairs(classFiles) do
+        local slug = string.match(string.lower(fileName), "^sh_([%w_]+)%.lua$")
+        if slug then
+            addOne(slug)
         end
     end
 

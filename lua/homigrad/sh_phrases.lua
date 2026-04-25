@@ -288,6 +288,66 @@ contextPhrases = {
 	}
 }
 
+local subject617ContextPhrases = {
+	["Behind You"] = {
+		"hidden/subject617/behindyou.mp3",
+		"hidden/subject617/behindyou01.mp3",
+		"hidden/subject617/behindyou02.mp3",
+	},
+	["Coming For You"] = {
+		"hidden/subject617/comingforyou01.mp3",
+		"hidden/subject617/comingforyou02.mp3",
+		"hidden/subject617/comingforyou03.mp3",
+	},
+	["Fresh Meat"] = {
+		"hidden/subject617/freshmeat01.mp3",
+		"hidden/subject617/freshmeat02.mp3",
+		"hidden/subject617/freshmeat03.mp3",
+	},
+	["I'm Here"] = {
+		"hidden/subject617/imhere.mp3",
+		"hidden/subject617/imhere01.mp3",
+		"hidden/subject617/imhere02.mp3",
+		"hidden/subject617/imhere03.mp3",
+		"hidden/subject617/imhere04.mp3",
+	},
+	["I See You"] = {
+		"hidden/subject617/iseeyou.mp3",
+		"hidden/subject617/iseeyou01.mp3",
+		"hidden/subject617/iseeyou02.mp3",
+		"hidden/subject617/iseeyou03.mp3",
+	},
+	["Look Up"] = {
+		"hidden/subject617/lookup.mp3",
+		"hidden/subject617/lookup01.mp3",
+		"hidden/subject617/lookup02.mp3",
+		"hidden/subject617/lookup03.mp3",
+	},
+	["Over Here"] = {
+		"hidden/subject617/overhere01.mp3",
+		"hidden/subject617/overhere02.mp3",
+		"hidden/subject617/overhere03.mp3",
+	},
+	["Turn Around"] = {
+		"hidden/subject617/turnaround01.mp3",
+		"hidden/subject617/turnaround02.mp3",
+	},
+	["You're Next"] = {
+		"hidden/subject617/you'renext01.mp3",
+		"hidden/subject617/you'renext02.mp3",
+	},
+}
+
+hg = hg or {}
+
+function hg.GetContextPhrasesForPlayer(ply)
+	if IsValid(ply) and ply.PlayerClassName == "subject617" then
+		return subject617ContextPhrases
+	end
+
+	return contextPhrases[ThatPlyIsFemale(ply) and 2 or 1]
+end
+
 if CLIENT then
 	local function randomPhrase()
 		RunConsoleCommand("hg_phrase")
@@ -317,10 +377,11 @@ if CLIENT then
 						randomPhrase()
 					else
 						--print(lply:GetPlayerClass())
-						if lply.PlayerClassName and lply:GetPlayerClass() and !lply:GetPlayerClass().CanUseDefaultPhrase then return end
+						if lply.PlayerClassName and lply:GetPlayerClass() and !lply:GetPlayerClass().CanUseDefaultPhrase and lply.PlayerClassName ~= "subject617" then return end
 						local tbl = {}
-						for context, phrases in pairs(contextPhrases[1]) do
-							if lply.organism.pain > 30 and (context == "Satisfied" or context == "Cheer") then continue end
+						local contextSource = hg.GetContextPhrasesForPlayer(lply)
+						for context, phrases in pairs(contextSource) do
+							if lply.PlayerClassName != "subject617" and lply.organism.pain > 30 and (context == "Satisfied" or context == "Cheer") then continue end
 							
 							tbl[#tbl + 1] = {
 								[1] = function()
@@ -332,7 +393,7 @@ if CLIENT then
 						hg.CreateRadialMenu(tbl)
 					end
 				end,
-				[2] = organism.pain > 60 and (organism.pain <= 100 and "Yell in pain" or "Moan in pain") or (lply.PlayerClassName == "furry" and "Meow") or "Do Phrase\nRMB - Menu"
+				[2] = lply.PlayerClassName == "subject617" and "617 Callouts\nRMB - Menu" or organism.pain > 60 and (organism.pain <= 100 and "Yell in pain" or "Moan in pain") or (lply.PlayerClassName == "furry" and "Meow") or "Do Phrase\nRMB - Menu"
 			}
 		end
 	end)

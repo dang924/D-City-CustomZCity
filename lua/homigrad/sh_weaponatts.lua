@@ -30,7 +30,11 @@ hg.attachments.sight = {
 		offset = Vector(-1, 0, -0.02),
 		offsetView = Vector(-1.3, -0.03, 9),
 		{},
-		mountType = "picatinny",
+		-- Kobra ЭКП-8-18 ships with a Warsaw-Pact side-rail (dovetail) mount,
+		-- which is exactly the rail an AK-style dust cover exposes. Treat it
+		-- as a native dovetail optic rather than a picatinny one so it doesn't
+		-- demand a rail adapter that AK platforms don't carry.
+		mountType = "dovetail",
 		holotex = "models/weapons/tfa_ins2/optics/kobra_lense",
 		holo = Material("vgui/arc9_eft_shared/reticles/new/scope_all_aksion_ekp_8_18_marks_03a"),
 		holo_size = CLIENT and ScreenScale(0.35) or 1, --size of the holo
@@ -842,6 +846,114 @@ hg.attachments.sight = {
 		transformFunction = function(self,model,vecadd,ang) -- in transformfunction
 		end,
 	},
+	["optic14"] = {
+		"sight",
+		"models/weapons/arccw_ushanka/torrey.mdl",
+		Angle(0, 0, -90),
+		offset = Vector(0, 0, -0.02),
+		offsetView = Vector(-0.95, 0, 6.5),
+		{},
+		mountType = "picatinny",
+		thermal = true,
+		scopemat = Material("decals/scope.png"),
+		mat = Material("effects/arc9/rt"),
+		perekrestie = Material("materials/hud/scopes/torreyreticle.png"),
+		localScopePos = Vector(0, 0, 0.9),
+		scope_blackout = 1000,
+		rot = 0,
+		FOVMin = 25,
+		FOVMax = 25,
+		FOVScoped = 40,
+		blackoutsize = 4200,
+		sizeperekrestie = 1800,
+		perekrestieSize = true,
+		PhysModel = "models/hunter/plates/plate025.mdl",
+		PhysPos = Vector(1, 0, 0),
+		PhysAng = Angle(0, 90, 0),
+
+		drawFunction = function(self,model)
+			if not model.submated then
+				model:SetSubMaterial(1, "effects/arc9/rt")
+				model.submated = true
+			end
+		end,
+
+		sightFunction = function(self)
+			self:DoRT()
+		end,
+
+		SightDrawFunc = function(self)
+			DrawColorModify({
+				["$pp_colour_addr"] = 0.02,
+				["$pp_colour_addg"] = 0.02,
+				["$pp_colour_addb"] = 0.02,
+				["$pp_colour_brightness"] = -0.12,
+				["$pp_colour_contrast"] = 1.35,
+				["$pp_colour_colour"] = 0,
+				["$pp_colour_mulr"] = 0,
+				["$pp_colour_mulg"] = 0,
+				["$pp_colour_mulb"] = 0,
+			})
+		end,
+
+		transformFunction = function(self,model,vecadd,ang)
+		end,
+		valid = true,
+	},
+	["optic15"] = {
+		"sight",
+		"models/weapons/arccw_ushanka/ultima.mdl",
+		Angle(0, 0, -90),
+		offset = Vector(-1, 0, 0.15),
+		offsetView = Vector(-1.1, 0, 6.4),
+		{},
+		mountType = "picatinny",
+		thermal = true,
+		scopemat = Material("decals/scope.png"),
+		mat = Material("effects/arc9/rt"),
+		perekrestie = Material("materials/hud/scopes/ultimareticle3.png"),
+		localScopePos = Vector(0, 0, 1.05),
+		scope_blackout = 1200,
+		rot = 0,
+		FOVMin = 24,
+		FOVMax = 24,
+		FOVScoped = 40,
+		blackoutsize = 4500,
+		sizeperekrestie = 2000,
+		perekrestieSize = true,
+		PhysModel = "models/hunter/plates/plate025.mdl",
+		PhysPos = Vector(1, 0, 0),
+		PhysAng = Angle(0, 90, 0),
+
+		drawFunction = function(self,model)
+			if not model.submated then
+				model:SetSubMaterial(1, "effects/arc9/rt")
+				model.submated = true
+			end
+		end,
+
+		sightFunction = function(self)
+			self:DoRT()
+		end,
+
+		SightDrawFunc = function(self)
+			DrawColorModify({
+				["$pp_colour_addr"] = 0.01,
+				["$pp_colour_addg"] = 0.01,
+				["$pp_colour_addb"] = 0.04,
+				["$pp_colour_brightness"] = -0.08,
+				["$pp_colour_contrast"] = 1.45,
+				["$pp_colour_colour"] = 0,
+				["$pp_colour_mulr"] = 0,
+				["$pp_colour_mulg"] = 0,
+				["$pp_colour_mulb"] = 0,
+			})
+		end,
+
+		transformFunction = function(self,model,vecadd,ang)
+		end,
+		valid = true,
+	},
 	["ironsight1"] = {
 		"sight",
 		"models/weapons/arc9_eft_shared/atts/ironsight/eft_rearsight_mbus.mdl",
@@ -1364,6 +1476,8 @@ local attNames = {
 	["optic9"] = "Trijicon \"ACOG TA01NSN 4x32\"",
 	["optic12"] = "Sight for kar98k",
 	["optic13"] = "PAG-17 optical sight",
+	["optic14"] = "Torrey Pines T12W Thermal",
+	["optic15"] = "Ultima DIY Thermal Camera",
 	["holo15"] = "SIG Sauer \"ROMEO4\"",
 	["supressor7"] = "SIG Sauer \"SRD762-QD\" 7.62x51",
 	["holo16"] = "Trijicon \"RMR\"",
@@ -1416,6 +1530,8 @@ local attachmentsIcons = {
 	["optic11"] = "entities/eft_attachments/scopes/s_pso1m2.png",
 	["optic12"] = "entities/eft_attachments/scopes/30mmvudu.png",
 	["optic13"] = "entities/ent_jack_gmod_ezarmor_pvs14nvm.png",
+	["optic14"] = "entities/torreylogo.png",
+	["optic15"] = "entities/kalashnikovlogo.png",
 	["holo15"] = "entities/eft_attachments/scopes/romeo4.png",
 	["holo16"] = "entities/eft_attachments/scopes/rmr.png",
 	["supressor8"] = "entities/eft_attachments/muzzles/hybridslinecer.png",
@@ -1438,6 +1554,7 @@ local function initAttachments()
 		for attachment, attData in pairs(attachments) do
 			if CLIENT then language.Add(attachment, attNames[attachment] or attachment) end
 			local att = {}
+			local className = "ent_att_" .. attachment
 			att.Base = "attachment_base"
 			att.PrintName = CLIENT and language.GetPhrase(attachment) or attachment
 			att.name = attachment
@@ -1451,7 +1568,17 @@ local function initAttachments()
 			att.PhysPos = attData.PhysPos or nil
 			att.PhysAng = attData.PhysAng or nil
 			att.IconOverride = attachmentsIcons[attachment]
-			scripted_ents.Register(att, "ent_att_" .. attachment)
+			scripted_ents.Register(att, className)
+
+			if att.Spawnable then
+				list.Set("SpawnableEntities", className, {
+					PrintName = attNames[attachment] or attachment,
+					ClassName = className,
+					Category = att.Category,
+					AdminOnly = false,
+					IconOverride = attachmentsIcons[attachment],
+				})
+			end
 		end
 	end
 end

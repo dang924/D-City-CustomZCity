@@ -254,6 +254,23 @@ local function Initialize()
         if not CurrentRound or CurrentRound().name ~= "coop" then return end
         if not zb or zb.ROUND_STATE ~= 1 then return end
 
+        if ZC_IsFallbackGordonRunning and ZC_IsFallbackGordonRunning() then
+            print("[ZC Flank] Flank wave aborted while fallback Gordon is running.")
+            flankActive = false
+            timer.Remove("ZC_FlankFirstWave")
+            timer.Remove("ZC_FlankWave")
+            return
+        end
+
+        local gordon = GetGordon and GetGordon() or nil
+        if IsValid(gordon) and gordon:Alive() then
+            print("[ZC Flank] Flank wave aborted because Gordon is alive again.")
+            flankActive = false
+            timer.Remove("ZC_FlankFirstWave")
+            timer.Remove("ZC_FlankWave")
+            return
+        end
+
         local rebelsAlive = 0
         for _, ply in ipairs(player.GetAll()) do
             if ply:Team() == TEAM_SPECTATOR then continue end
@@ -278,6 +295,14 @@ local function Initialize()
     local function StartFlankSystem()
         if not flankEnabled then return end
         if flankActive then return end
+        if ZC_IsFallbackGordonRunning and ZC_IsFallbackGordonRunning() then
+            print("[ZC Flank] Death squad suppressed while fallback Gordon is running.")
+            return
+        end
+
+        local gordon = GetGordon and GetGordon() or nil
+        if IsValid(gordon) and gordon:Alive() then return end
+
         flankActive = true
 
         net.Start("ZC_FlankWarning")

@@ -38,6 +38,21 @@ SWEP.WorldAng = Angle(0, 0, 0)
 
 SWEP.attPos = Vector(0,0,2)
 SWEP.attAng = Angle(-90,0,0)
+SWEP.AttachmentPos = Vector(-26.4566, -0.0885, -1.6433)
+SWEP.AttachmentAng = Angle(0, 0, 0)
+SWEP.LaserOriginPos = Vector(24, 0, 4.6)
+SWEP.LaserOriginAng = Angle(0, 0, 0)
+SWEP.LaserOriginAttachment = "laser"
+SWEP.laser = true
+SWEP.lasertoggle = 1
+SWEP.laserData = {
+	offsetPos = Vector(0, 0, 0),
+	offsetAng = Angle(0, 0, 0),
+	color = Color(89, 230, 255, 220),
+	supportFlashlight = false,
+	laserSize = 1.4,
+	shouldalwaysdraw = true,
+}
 
 SWEP.DistSound = "weapons/tfa_ins2/m40a1/m40a1_fire.wav"
 
@@ -107,6 +122,62 @@ SWEP.LHAng = Angle(-90,-90,-90)
 
 local finger1 = Angle(-15,0,5)
 local finger2 = Angle(-15,45,-5)
+local laser_origin_names = {
+	"laser",
+	"1",
+	"muzzle",
+	"muzzle_flash",
+}
+
+local function resolveLaserOrigin(model, attachmentName)
+	if not IsValid(model) or not attachmentName then return end
+	local attachmentId = model:LookupAttachment(attachmentName)
+	if not attachmentId or attachmentId <= 0 then return end
+	return model:GetAttachment(attachmentId)
+end
+
+function SWEP:GetLaserOrigin(model, attachmentData)
+	if isvector(self.LaserOriginPos) then
+		local pinModel = self:GetWeaponEntity()
+		if not IsValid(pinModel) then
+			pinModel = model
+		end
+
+		if IsValid(pinModel) then
+			local pinPos, pinAng = LocalToWorld(
+				self.LaserOriginPos,
+				self.LaserOriginAng or angle_zero,
+				pinModel:GetPos(),
+				pinModel:GetAngles()
+			)
+
+			return LocalToWorld(self.AttachmentPos or vector_origin, self.AttachmentAng or angle_zero, pinPos, pinAng)
+		end
+	end
+
+	local origin = resolveLaserOrigin(model, self.LaserOriginAttachment)
+	if not origin then
+		for i = 1, #laser_origin_names do
+			origin = resolveLaserOrigin(model, laser_origin_names[i])
+			if origin then break end
+		end
+	end
+
+	if origin then
+		return LocalToWorld(self.AttachmentPos or vector_origin, self.AttachmentAng or angle_zero, origin.Pos, origin.Ang)
+	end
+
+	local modelPos, modelAng = model:GetPos(), model:GetAngles()
+	return LocalToWorld(attachmentData.offsetPos or vector_origin, attachmentData.offsetAng or angle_zero, modelPos, modelAng)
+end
+
+function SWEP:InitializePost()
+	if self.lasertoggle == nil then
+		self.lasertoggle = 1
+	end
+	self.laser = true
+end
+
 SWEP.Primary.Wait = 0.1
 SWEP.ReloadTime = 4
 SWEP.ReloadSoundes = {

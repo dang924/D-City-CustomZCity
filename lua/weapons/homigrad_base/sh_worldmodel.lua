@@ -885,7 +885,16 @@ hook.Add("PostDrawTranslucentRenderables", "huyCock333", function()
 		if IsValid(self:GetOwner()) and self:GetOwner().GetActiveWeapon and self:GetOwner():GetActiveWeapon() ~= self and self.shouldntDrawHolstered then removeFlashlights(self) continue end
 		if not self.attachments then continue end
 		if not self.lasertoggle then removeFlashlights(self) end
-		if self.attachments.underbarrel and not table_IsEmpty(self.attachments.underbarrel) and string_find(self.attachments.underbarrel[1], "laser") or self.laser then self:DrawLaser() end
+		local underbarrel = self.attachments.underbarrel
+		local underbarrelName = istable(underbarrel) and underbarrel[1] or nil
+		local hasLaserUnderbarrel = istable(underbarrel)
+			and not table_IsEmpty(underbarrel)
+			and isstring(underbarrelName)
+			and string_find(underbarrelName, "laser")
+
+		if hasLaserUnderbarrel or self.laser then
+			self:DrawLaser()
+		end
 	end
 end)
 

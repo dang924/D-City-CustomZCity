@@ -120,6 +120,10 @@ function ENT:ExplodeAndRemove()
 	effectData:SetOrigin(self:GetPos())
 	util.Effect("cball_explode", effectData, true, true)
 
+	local ringData = EffectData()
+	ringData:SetOrigin(self:GetPos())
+	util.Effect("hg_osipr_explode_ring", ringData, true, true)
+
 	self:EmitSound("weapons/physcannon/energy_sing_explosion2.wav", 85, 100, 0.8, CHAN_AUTO)
 	SafeRemoveEntityDelayed(self, 0)
 end

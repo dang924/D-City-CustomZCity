@@ -84,7 +84,7 @@ local primary_weapons = {
 local combine_subclasses = {
     default = {
         color = Color(0,220,220),
-        models = Model("models/player_hl2_combine_ordinal.mdl"),
+        models = Model("models/player/combine_soldier.mdl"),
         loadout = {
             {weapon = "weapon_melee"}, --;; ближний бой мясо кишки
             {
@@ -105,7 +105,7 @@ local combine_subclasses = {
 
     elite = {
         color = Color(246,13,13),
-        models = Model("models/player_hl2_combine_wallhammer.mdl"),
+        models = Model("models/player/combine_super_soldier.mdl"),
         loadout = {
             {weapon = "weapon_melee"},
             {
@@ -126,7 +126,7 @@ local combine_subclasses = {
 
     sniper = {
         color = Color(0,220,220),
-        models = Model("models/player_hl2_combine_ordinal.mdl"),
+        models = Model("models/player/combine_soldier.mdl"),
         loadout = {
             {weapon = "weapon_melee"},
             {
@@ -146,7 +146,7 @@ local combine_subclasses = {
 
     shotgunner = {
         color = Color(220,0,0),
-        models = Model("models/player_hl2_combine_suppressor.mdl"),
+        models = Model("models/player/combine_soldier.mdl"),
         skin = 1,
         loadout = {
             {weapon = "weapon_melee"},
@@ -262,7 +262,8 @@ end
 local function TryApplyManagedCoopLoadout(ply, subClass)
     if not IsValid(ply) or not _G.ZC_ApplyCoopLoadout then return false end
 
-    local ok, applied = pcall(_G.ZC_ApplyCoopLoadout, ply, tostring(subClass or "default"), "Combine")
+    local baseClass = tostring(ply.PlayerClassName or "Combine")
+    local ok, applied = pcall(_G.ZC_ApplyCoopLoadout, ply, tostring(subClass or "default"), baseClass)
     return ok and applied == true
 end
 
@@ -302,16 +303,16 @@ function CLASS.On(self, data)
 
     self.organism.CantCheckPulse = true
 
-    --;; Армор
-    self.armors = {}
-    self.armors["torso"] = "cmb_armor"
-    self.armors["head"] = "cmb_helmet"
-    self:SyncArmor()
-
+    local managedLoadoutApplied = false
     if not data.bNoEquipment then
-        if not TryApplyManagedCoopLoadout(self, sub) then
+        managedLoadoutApplied = TryApplyManagedCoopLoadout(self, sub)
+        if not managedLoadoutApplied then
             giveSubClassLoadout(self, sub)
         end
+    end
+
+    if not managedLoadoutApplied and _G.ZC_ApplyPlayerClassArmor then
+        pcall(_G.ZC_ApplyPlayerClassArmor, self)
     end
 
     self.subClass = nil
@@ -918,14 +919,21 @@ if CLIENT then
         end
     end)
 
+    hook.Add("SetupMove", "CombinePNV_SetupMove", function(ply, mv, cmd)
+        if not IsValid(ply) then return end
+        if not ply:Alive() or ply.PlayerClassName ~= "Combine" then return end
+        if gui.IsGameUIVisible() or IsValid(vgui.GetKeyboardFocus()) then return end
+        if CurTime() <= next_toggle_time then return end
+
+        local impulse = tonumber(cmd:GetImpulse()) or 0
+        if impulse ~= 100 then return end
+
+        togglePNV()
+        next_toggle_time = CurTime() + toggle_cooldown
+    end)
+
     hook.Add("Think","PNV_Think",function()
         local ply = LocalPlayer()
-        if ply:Alive() and ply.PlayerClassName == "Combine" then
-            if input.IsKeyDown(KEY_F) and not gui.IsGameUIVisible() and not IsValid(vgui.GetKeyboardFocus()) and (CurTime() > next_toggle_time) then
-                togglePNV()
-                next_toggle_time = CurTime() + toggle_cooldown
-            end
-        end
         if not ply:Alive() and pnv_enabled then togglePNV() end
         if ply.PlayerClassName ~= "Combine" and pnv_enabled then togglePNV() end
 

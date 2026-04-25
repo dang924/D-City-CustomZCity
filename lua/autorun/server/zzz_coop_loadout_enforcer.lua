@@ -36,6 +36,57 @@ local WEAPON_CLASS_ALIASES = {
 
 local ARMOR_SLOTS = { "torso", "head", "ears", "face" }
 
+local FACTION_ARMOR_BLACKLIST = {
+    cmb_armor = true,
+    cmb_helmet = true,
+    combine_armor = true,
+    combine_helmet = true,
+    metrocop_armor = true,
+    metrocop_helmet = true,
+    gordon_armor = true,
+    gordon_helmet = true,
+    gordon_arm_armor_left = true,
+    gordon_arm_armor_right = true,
+    gordon_leg_armor_left = true,
+    gordon_leg_armor_right = true,
+    gordon_calf_armor_left = true,
+    gordon_calf_armor_right = true,
+}
+
+local PLAYERCLASS_AUTO_ARMOR = {
+    Combine = { "cmb_armor", "cmb_helmet" },
+    Metrocop = { "metrocop_armor", "metrocop_helmet" },
+}
+
+local function ApplyPlayerClassArmor(ply)
+    if not IsValid(ply) or not hg or not hg.AddArmor then return false end
+
+    local armorSet = PLAYERCLASS_AUTO_ARMOR[tostring(ply.PlayerClassName or "")]
+    if not istable(armorSet) then return false end
+
+    local applied = false
+    for _, armorClass in ipairs(armorSet) do
+        if isstring(armorClass) and armorClass ~= "" then
+            local ok = pcall(function()
+                hg.AddArmor(ply, armorClass)
+            end)
+            if ok then
+                applied = true
+            end
+        end
+    end
+
+    if applied and ply.SyncArmor then
+        pcall(function()
+            ply:SyncArmor()
+        end)
+    end
+
+    return applied
+end
+
+_G.ZC_ApplyPlayerClassArmor = ApplyPlayerClassArmor
+
 local function CurrentRoundIsCoop()
     if istable(zb) and string.lower(tostring(zb.CROUND or "")) == "coop" then
         return true
@@ -216,14 +267,20 @@ local function SanitiseArmor(armorTbl)
     local out = {}
     for slot, value in pairs(armorTbl) do
         if isstring(value) then
-            out[slot] = value
+            local key = string.lower(value)
+            out[slot] = FACTION_ARMOR_BLACKLIST[key] and "" or value
         elseif istable(value) then
             local seq = TableToSequence(value) or value
             local inner = {}
             for i = 1, #seq do
-                inner[i] = seq[i]
+                local entry = seq[i]
+                if i == 1 then
+                    inner[1] = entry
+                elseif not FACTION_ARMOR_BLACKLIST[string.lower(tostring(entry))] then
+                    inner[#inner + 1] = entry
+                end
             end
-            out[slot] = inner
+            out[slot] = (#inner <= 1) and "" or inner
         end
     end
     return out
@@ -326,6 +383,7 @@ local function ApplyArmorFromPreset(ply, armor)
     local function AllowedForClass(armorClass)
         armorClass = string.lower(tostring(armorClass or ""))
         if string.StartWith(armorClass, "gordon_") then return className == "Gordon" end
+        if string.StartWith(armorClass, "cmb_") then return className == "Combine" end
         if string.StartWith(armorClass, "combine_") then return className == "Combine" end
         if string.StartWith(armorClass, "metrocop_") then return className == "Metrocop" end
         return true
@@ -405,6 +463,10 @@ local function ApplyPresetDirectly(ply, presetName)
     end
 
     ApplyArmorFromPreset(ply, preset.armor)
+
+    if _G.ZC_ApplyPlayerClassArmor then
+        pcall(_G.ZC_ApplyPlayerClassArmor, ply)
+    end
 
     if not IsValid(ply:GetWeapon("weapon_hands_sh")) then
         ply:Give("weapon_hands_sh")

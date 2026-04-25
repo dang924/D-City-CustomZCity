@@ -38,6 +38,8 @@ local FALLBACK_ATTACHMENTS = {
     { label = "PSO-1M2 (Alt)",           attKey = "optic11",      placement = "sight" },
     { label = "EOTech Vudu",             attKey = "optic12",      placement = "sight" },
     { label = "NPZ PAG-17",              attKey = "optic13",      placement = "sight" },
+    { label = "Torrey T12W Thermal",     attKey = "optic14",      placement = "sight" },
+    { label = "Ultima DIY Thermal",      attKey = "optic15",      placement = "sight" },
     { label = "MBUS Rear",               attKey = "ironsight1",   placement = "sight" },
     { label = "A2 Rear",                 attKey = "ironsight2",   placement = "sight" },
     { label = "A2 Front",                attKey = "ironsight3",   placement = "sight" },

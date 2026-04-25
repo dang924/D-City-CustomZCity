@@ -5,7 +5,7 @@
 --   all_kd    = (cmb_kill + reb_kill) / ply_death
 
 if CLIENT then return end
-if not ZC_IsPatchRebelClassName then
+if not ZC_IsPatchRebelPlayer then
     include("autorun/server/sv_patch_player_factions.lua")
 end
 
@@ -20,6 +20,61 @@ local stats = {}
 local dirtyRows = {}
 local pendingEvents = {}
 local lastAttacker = {}
+
+local function ResolvePlayerFromEntity(ent)
+    if not IsValid(ent) then return nil end
+    if ent:IsPlayer() then return ent end
+
+    if IsValid(ent.ply) and ent.ply:IsPlayer() then
+        return ent.ply
+    end
+
+    if hg and hg.RagdollOwner then
+        local owner = hg.RagdollOwner(ent)
+        if IsValid(owner) and owner:IsPlayer() then
+            return owner
+        end
+    end
+
+    if ent.GetNWEntity then
+        local owner = ent:GetNWEntity("RagdollOwner")
+        if IsValid(owner) and owner:IsPlayer() then
+            return owner
+        end
+    end
+
+    if ent.GetOwner then
+        local owner = ent:GetOwner()
+        if IsValid(owner) and owner:IsPlayer() then
+            return owner
+        end
+    end
+
+    return nil
+end
+
+local function ResolvePlayerAttacker(attacker, inflictor)
+    local resolved = ResolvePlayerFromEntity(attacker)
+    if IsValid(resolved) then return resolved end
+
+    resolved = ResolvePlayerFromEntity(inflictor)
+    if IsValid(resolved) then return resolved end
+
+    return nil
+end
+
+local function IsTrackedRebelPlayer(ply)
+    return ZC_IsPatchRebelPlayer and ZC_IsPatchRebelPlayer(ply) == true
+end
+
+local function IsTrackedCombinePlayer(ply)
+    return ZC_IsPatchCombinePlayer and ZC_IsPatchCombinePlayer(ply) == true
+end
+
+local function IsTrackedCrossFactionKill(attacker, victim)
+    return (IsTrackedRebelPlayer(attacker) and IsTrackedCombinePlayer(victim))
+        or (IsTrackedCombinePlayer(attacker) and IsTrackedRebelPlayer(victim))
+end
 
 local function IsCoopRoundActive()
     if not CurrentRound then return false end
@@ -345,6 +400,7 @@ local function CreateStatsTable()
     query:Create("all_kd", "DECIMAL(10,2) NOT NULL DEFAULT 0")
     query:PrimaryKey("steamid")
     query:Callback(function()
+        FinishTableSetup()
         EnforceStatsTableSchema()
     end)
     query:Execute()
@@ -369,7 +425,7 @@ local function QueuePendingEvent(attacker, victim)
     pendingEvents[#pendingEvents + 1] = {
         attackerSteamID64 = attacker:SteamID64(),
         attackerName = attacker:Nick(),
-        attackerIsRebel = ZC_IsPatchRebelClassName(attacker.PlayerClassName),
+        attackerIsRebel = IsTrackedRebelPlayer(attacker),
         victimSteamID64 = victim:SteamID64(),
         victimName = victim:Nick()
     }
@@ -380,7 +436,7 @@ local function ProcessFactionDeath(attacker, victim)
     local victimRow = GetOrCreateRowByPlayer(victim)
     if not attackerRow or not victimRow then return end
 
-    if ZC_IsPatchRebelClassName(attacker.PlayerClassName) then
+    if IsTrackedRebelPlayer(attacker) then
         attackerRow.cmb_kill = (tonumber(attackerRow.cmb_kill) or 0) + 1
     else
         attackerRow.reb_kill = (tonumber(attackerRow.reb_kill) or 0) + 1
@@ -546,16 +602,11 @@ local function Initialize()
     hook.Add("HomigradDamage", "ZCity_KillTracker_TrackAttacker", function(ply, dmgInfo)
         if not IsValid(ply) or not ply:IsPlayer() then return end
 
-        local attacker = dmgInfo:GetAttacker()
-        if not IsValid(attacker) or not attacker:IsPlayer() then return end
+        local attacker = ResolvePlayerAttacker(dmgInfo:GetAttacker(), dmgInfo:GetInflictor())
+        if not IsValid(attacker) then return end
         if attacker == ply then return end
 
-        local attackerClass = attacker.PlayerClassName
-        local victimClass = ply.PlayerClassName
-        local relevant = (ZC_IsPatchRebelClassName(attackerClass) and ZC_IsPatchCombineClassName(victimClass)) or
-            (ZC_IsPatchCombineClassName(attackerClass) and ZC_IsPatchRebelClassName(victimClass))
-
-        if not relevant then return end
+        if not IsTrackedCrossFactionKill(attacker, ply) then return end
 
         lastAttacker[ply:SteamID64()] = attacker
     end)
@@ -566,19 +617,16 @@ local function Initialize()
         local trackedAttacker = lastAttacker[victim:SteamID64()]
         if IsValid(trackedAttacker) and trackedAttacker ~= victim then
             attacker = trackedAttacker
+        else
+            attacker = ResolvePlayerAttacker(attacker, inflictor)
         end
 
         lastAttacker[victim:SteamID64()] = nil
 
-        if not IsValid(attacker) or not attacker:IsPlayer() then return end
+        if not IsValid(attacker) then return end
         if attacker == victim then return end
 
-        local attackerClass = attacker.PlayerClassName
-        local victimClass = victim.PlayerClassName
-        local relevant = (ZC_IsPatchRebelClassName(attackerClass) and ZC_IsPatchCombineClassName(victimClass)) or
-            (ZC_IsPatchCombineClassName(attackerClass) and ZC_IsPatchRebelClassName(victimClass))
-
-        if not relevant then return end
+        if not IsTrackedCrossFactionKill(attacker, victim) then return end
 
         if not statsLoaded then
             QueuePendingEvent(attacker, victim)

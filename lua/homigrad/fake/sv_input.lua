@@ -29,7 +29,7 @@ end)
 hook.Add("OnPlayerHitGround","fallStun",function(ply,inwater,onfloater,speed)
 	if IsValid(ply.FakeRagdoll) then return true end
 	local round = CurrentRound and CurrentRound()
-	local hiddenLeapProtected = round and round.name == "hidden" and ply:Team() == 0 and (ply.HiddenLeapImpactProtectUntil or 0) > CurTime()
+	local hiddenLeapProtected = (round and round.name == "hidden" and ply:Team() == 0 and (ply.HiddenLeapImpactProtectUntil or 0) > CurTime()) or (ZC_IsSubject617LeapProtected and ZC_IsSubject617LeapProtected(ply))
 	local tr = {}
 	tr.start = ply:GetPos()
 	tr.endpos = ply:GetPos() - vector_up * 2

@@ -11,7 +11,45 @@ local hg_coolcamera = ConVarExists("hg_coolcamera") and GetConVar("hg_coolcamera
 		return 1
 	end)
 
+	local function isHiddenSubject617Prep(ply)
+		if not IsValid(ply) or ply.PlayerClassName != "subject617" then return false end
+
+		local round = CurrentRound and CurrentRound()
+		if not round or round.name != "hidden" then return false end
+
+		if round.HiddenPrepActive ~= nil then
+			return round.HiddenPrepActive and true or false
+		end
+
+		return round.IsHiddenPreparationPhase and round:IsHiddenPreparationPhase() or false
+	end
+
+	local function isHiddenIrisPrepSpectatorGhost(ply)
+		if not IsValid(ply) then return false end
+		if ply:Team() != 1 then return false end
+		if ply:Alive() then return false end
+
+		local round = CurrentRound and CurrentRound()
+		if not round or round.name != "hidden" then return false end
+
+		if round.HiddenPrepActive ~= nil then
+			return round.HiddenPrepActive and true or false
+		end
+
+		return round.IsHiddenPreparationPhase and round:IsHiddenPreparationPhase() or false
+	end
+
 	hook.Add("PlayerFootstep", "CustomFootstep2sad", function(ply, pos, foot, sound, volume, rf)
+		if isHiddenIrisPrepSpectatorGhost(ply) then
+			ply.lastStepTime = CurTime() + 0.2
+			return true
+		end
+
+		if isHiddenSubject617Prep(ply) then
+			ply.lastStepTime = CurTime() + 0.2
+			return true
+		end
+
 		if (ply.lastStepTime or 0) > CurTime() then return true end
 		local vel = ply:GetVelocity()
 		local len = vel:Length()
@@ -25,6 +63,10 @@ local hg_coolcamera = ConVarExists("hg_coolcamera") and GetConVar("hg_coolcamera
 			if sprint and hg.KeyDown(ply, IN_WALK) and IsValid(wep) and wep:GetClass() == "weapon_hands_sh" then
 				ply.lastStepTime = CurTime() + 0.4 * (sprint and 1.5 or 1) * (1 / math_max(len, sprint and 200 or 150)) * 100
 			end
+		end
+
+		if ply.PlayerClassName == "subject617" then
+			ply.lastStepTime = math.max(ply.lastStepTime or 0, CurTime() + 0.32)
 		end
 
 		hook_Run("HG_PlayerFootstep_Notify", ply, pos, foot, sound, volume, rf)	--; Do not return anything from this _Notify hook

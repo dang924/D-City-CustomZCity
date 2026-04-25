@@ -560,6 +560,22 @@ local function Initialize()
     local waveTimerActive = false
     local waveEndTime     = 0
     local CancelWave  -- forward-declared; assigned in Wave system section below
+    local RetryDeadRebelWaveQueue
+
+    local fallbackGordonPending = false
+
+    local function SetFallbackGordonPending(active, reason)
+        active = active == true
+        if fallbackGordonPending == active then return end
+
+        fallbackGordonPending = active
+        print("[ZC Coop] Fallback Gordon " .. (active and "pending" or "resolved") ..
+              (reason and (" (" .. tostring(reason) .. ")") or ""))
+    end
+
+    function ZC_IsFallbackGordonRunning()
+        return fallbackGordonPending == true
+    end
 
     hook.Add("PlayerDeath", "ZCity_CancelWaveOnGordonDeath", function(ply)
         if ply.PlayerClassName ~= "Gordon" then return end
@@ -643,7 +659,19 @@ local function Initialize()
     end
 
     local function AssignFallbackGordon()
-        if IsValid(GetGordon()) then return end
+        if IsValid(GetGordon()) then
+            SetFallbackGordonPending(false, "Gordon already alive")
+            if RetryDeadRebelWaveQueue then
+                timer.Simple(0, function()
+                    if RetryDeadRebelWaveQueue then
+                        RetryDeadRebelWaveQueue("Gordon already alive")
+                    end
+                end)
+            end
+            return
+        end
+
+        SetFallbackGordonPending(true, "assigning fallback")
 
         ClearStaleGordonPersistence()
 
@@ -733,6 +761,11 @@ local function Initialize()
                 ZC_RefreshWeaponInvLimits(pick)
             end
 
+            SetFallbackGordonPending(false, "assigned " .. pick:Nick())
+            if RetryDeadRebelWaveQueue then
+                RetryDeadRebelWaveQueue("fallback Gordon assigned")
+            end
+
             print("[ZC Coop] Assigned Gordon to " .. pick:Nick() .. " on " .. tostring(game.GetMap()))
 
             timer.Simple(0.1, function()
@@ -745,10 +778,17 @@ local function Initialize()
 
     hook.Add("ZB_StartRound", "ZCity_EnsureGordon", function()
         if not CurrentRound or CurrentRound().name ~= "coop" then return end
+        SetFallbackGordonPending(true, "round start")
         timer.Simple(5, AssignFallbackGordon)
         timer.Simple(30, function()
             if not CurrentRound or CurrentRound().name ~= "coop" then return end
-            if IsValid(GetGordon()) then return end
+            if IsValid(GetGordon()) then
+                SetFallbackGordonPending(false, "Gordon alive before 30s retry")
+                if RetryDeadRebelWaveQueue then
+                    RetryDeadRebelWaveQueue("Gordon alive before 30s retry")
+                end
+                return
+            end
             print("[ZC Coop] No Gordon assigned after 30s — assigning fallback Gordon now.")
             AssignFallbackGordon()
         end)
@@ -937,6 +977,9 @@ local function Initialize()
         timer.Remove("ZC_REBEL_WAVE")
         for _, ply in ipairs(rebelWaveQueue) do
             if IsValid(ply) then
+                if not ply:Alive() and ZC_IsPatchRebelPlayer(ply) then
+                    ply.ZC_PendingWaveRetry = true
+                end
                 ply.ZCityRespawning = nil
                 ply.ZC_InWaveQueue  = nil
                 SendRespawnTimer(ply, -1)
@@ -950,12 +993,14 @@ local function Initialize()
     end
 
     local function FullWaveReset(reason)
+        SetFallbackGordonPending(false, reason)
         CancelWave(reason)
         local COMBINE_SUBCLASSES = { default=true, shotgunner=true, sniper=true, elite=true }
         for _, ply in ipairs(player.GetAll()) do
             if not IsValid(ply) then continue end
             ply.ZCityRespawning = nil
             ply.ZC_InWaveQueue  = nil
+            ply.ZC_PendingWaveRetry = nil
             ply.gottarespawn    = nil
             if COMBINE_SUBCLASSES[ply.subClass] then ply.subClass = nil end
         end
@@ -973,6 +1018,101 @@ local function Initialize()
         joiningSpectator[ply:SteamID64()] = true
         timer.Simple(1, function() joiningSpectator[ply:SteamID64()] = nil end)
     end)
+
+    local function StartRebelWaveTimer()
+        if waveTimerActive then return end
+
+        waveTimerActive = true
+        waveEndTime     = CurTime() + RESPAWN_TIME
+        BroadcastWave(true, waveEndTime)
+        print("[ZC Respawn]   -> Rebel wave started (" .. RESPAWN_TIME .. "s)")
+
+        timer.Create("ZC_REBEL_WAVE", RESPAWN_TIME, 1, function()
+            local g = GetGordon()
+            if not IsValid(g) or not g:Alive() then
+                CancelWave("Gordon not alive at wave spawn")
+                return
+            end
+
+            print("[ZC Respawn] Rebel wave firing — spawning " .. #rebelWaveQueue .. " player(s)")
+            local baseFormationIndex = CountAliveNonGordonPlayers()
+            local waveSpawnCount = 0
+            for _, ply in ipairs(rebelWaveQueue) do
+                if not IsValid(ply) then continue end
+                if ply:Alive() then continue end
+                waveSpawnCount = waveSpawnCount + 1
+                ply.ZCityRespawning = nil
+                ply.ZC_InWaveQueue  = nil
+                ply.ZC_PendingWaveRetry = nil
+                SendRespawnTimer(ply, -1)
+                SpawnAsRebel(ply, g, baseFormationIndex + waveSpawnCount)
+                print("[ZC Respawn]   -> Spawned: " .. ply:Nick())
+            end
+
+            rebelWaveQueue  = {}
+            waveTimerActive = false
+            waveEndTime     = 0
+            BroadcastWave(false, 0)
+        end)
+    end
+
+    local function QueueRebelForWave(victim, source)
+        if not IsValid(victim) then return false, "invalid player" end
+        if victim:Team() == TEAM_SPECTATOR then return false, "spectator team" end
+        if joiningSpectator[victim:SteamID64()] then return false, "joining spectator" end
+        if victim.PlayerClassName == "Gordon" then return false, "Gordon" end
+        if not CurrentRound or CurrentRound().name ~= "coop" then return false, "not coop" end
+        if zb and zb.ROUND_STATE ~= 1 then return false, "not mid-round" end
+        if not ZC_RespawnsEnabled then return false, "respawns not enabled" end
+        if victim:Alive() then return false, "alive" end
+        if victim.ZC_InWaveQueue then return false, "already queued" end
+        if not ZC_IsPatchRebelPlayer(victim) then return false, "non-rebel class" end
+
+        local gordon = GetGordon()
+        if not IsValid(gordon) or not gordon:Alive() then
+            victim.ZC_PendingWaveRetry = true
+            return false, "no alive Gordon"
+        end
+
+        victim.ZCityRespawning = true
+        victim.ZC_PendingWaveRetry = nil
+        victim.ZC_InWaveQueue = true
+        table.insert(rebelWaveQueue, victim)
+        print("[ZC Respawn]   -> Rebel queued for wave (" .. #rebelWaveQueue .. " in queue): " .. victim:Nick() ..
+              (source and (" [" .. tostring(source) .. "]") or ""))
+
+        SendRespawnTimer(victim, waveTimerActive and (waveEndTime - CurTime()) or RESPAWN_TIME)
+        StartRebelWaveTimer()
+        return true
+    end
+
+    RetryDeadRebelWaveQueue = function(source)
+        if not CurrentRound or CurrentRound().name ~= "coop" then return 0 end
+        if not ZC_RespawnsEnabled then return 0 end
+
+        local gordon = GetGordon()
+        if not IsValid(gordon) or not gordon:Alive() then return 0 end
+
+        local queuedCount = 0
+        for _, ply in ipairs(player.GetAll()) do
+            if not IsValid(ply) then continue end
+            if ply:Alive() then continue end
+            if ply.ZC_InWaveQueue then continue end
+            if ply:Team() == TEAM_SPECTATOR then continue end
+            if not ZC_IsPatchRebelPlayer(ply) then continue end
+
+            local queued = QueueRebelForWave(ply, source or "auto-retry")
+            if queued then
+                queuedCount = queuedCount + 1
+            end
+        end
+
+        if queuedCount > 0 then
+            print("[ZC Respawn] Auto-requeued " .. queuedCount .. " dead rebel(s) after " .. tostring(source or "auto-retry"))
+        end
+
+        return queuedCount
+    end
 
     -- ── Class/subclass helpers ────────────────────────────────────────────────────
 
@@ -1373,54 +1513,34 @@ local function Initialize()
             return
         end
 
-        local gordon = GetGordon()
-        if not IsValid(gordon) or not gordon:Alive() then
-            print("[ZC Respawn]   -> SKIP: no alive Gordon")
-            return
-        end
-
-        victim.ZC_InWaveQueue = true
-        table.insert(rebelWaveQueue, victim)
-        print("[ZC Respawn]   -> Rebel queued for wave (" .. #rebelWaveQueue .. " in queue): " .. victim:Nick())
-
-        SendRespawnTimer(victim, waveTimerActive and (waveEndTime - CurTime()) or RESPAWN_TIME)
-
-        if not waveTimerActive then
-            waveTimerActive = true
-            waveEndTime     = CurTime() + RESPAWN_TIME
-            BroadcastWave(true, waveEndTime)
-            print("[ZC Respawn]   -> Rebel wave started (" .. RESPAWN_TIME .. "s)")
-
-            timer.Create("ZC_REBEL_WAVE", RESPAWN_TIME, 1, function()
-                local g = GetGordon()
-                if not IsValid(g) or not g:Alive() then
-                    CancelWave("Gordon not alive at wave spawn")
-                    return
-                end
-
-                print("[ZC Respawn] Rebel wave firing — spawning " .. #rebelWaveQueue .. " player(s)")
-                local baseFormationIndex = CountAliveNonGordonPlayers()
-                local waveSpawnCount = 0
-                for _, ply in ipairs(rebelWaveQueue) do
-                    if not IsValid(ply) then continue end
-                    if ply:Alive() then continue end
-                    waveSpawnCount = waveSpawnCount + 1
-                    ply.ZCityRespawning = nil
-                    ply.ZC_InWaveQueue  = nil
-                    SendRespawnTimer(ply, -1)
-                    SpawnAsRebel(ply, g, baseFormationIndex + waveSpawnCount)
-                    print("[ZC Respawn]   -> Spawned: " .. ply:Nick())
-                end
-
-                rebelWaveQueue  = {}
-                waveTimerActive = false
-                waveEndTime     = 0
-                BroadcastWave(false, 0)
-            end)
+        local queued, reason = QueueRebelForWave(victim, "death")
+        if not queued then
+            if reason == "no alive Gordon" then
+                print("[ZC Respawn]   -> DEFER: no alive Gordon; will retry when queue re-opens")
+            else
+                print("[ZC Respawn]   -> SKIP: " .. tostring(reason))
+            end
         end
     end)
 
     -- ── PlayerSpawn cleanup ───────────────────────────────────────────────────────
+
+    hook.Add("PlayerSpawn", "ZCity_CoopRespawn_ReopenQueue", function(ply)
+        if not IsValid(ply) then return end
+        if ply:Team() == TEAM_SPECTATOR then return end
+
+        timer.Simple(0.1, function()
+            if not IsValid(ply) then return end
+            if ply:Team() == TEAM_SPECTATOR then return end
+            if not ply:Alive() then return end
+            if ply.PlayerClassName ~= "Gordon" then return end
+
+            SetFallbackGordonPending(false, "Gordon spawned")
+            if RetryDeadRebelWaveQueue then
+                RetryDeadRebelWaveQueue("Gordon spawned")
+            end
+        end)
+    end)
 
     hook.Add("PlayerSpawn", "ZCity_CoopRespawn_Cleanup", function(ply)
         local timerName = "ZC_RESPAWN_" .. ply:SteamID64()
@@ -1429,6 +1549,7 @@ local function Initialize()
             if timer.Exists(timerName) then
                 timer.Remove(timerName)
                 ply.ZCityRespawning = nil
+                ply.ZC_PendingWaveRetry = nil
                 SendRespawnTimer(ply, -1)
             end
             return
@@ -1446,6 +1567,7 @@ local function Initialize()
 
         if timer.Exists(timerName) then timer.Remove(timerName) end
         ply.ZCityRespawning = nil
+        ply.ZC_PendingWaveRetry = nil
         SendRespawnTimer(ply, -1)
     end)
 

@@ -703,27 +703,35 @@ function hg.MainTPIKFunction(ent, ply, wpn)
         local stammul = math_Clamp(1 - ent.organism.stamina[1] / 90, 0, 1)
 
         local rfinger = ent:LookupBone("ValveBiped.Bip01_R_Finger11")
-        local rfingerAngles = rfinger and ent:GetManipulateBoneAngles(rfinger)
+        local rfingerAngles = isnumber(rfinger) and rfinger >= 0 and ent:GetManipulateBoneAngles(rfinger)
         local holdingrh = rfingerAngles and rfingerAngles[2] < 0
         if holdingrh then
             local rh = ent:LookupBone("ValveBiped.Bip01_R_Hand")
-            local rhmat = ent:GetBoneMatrix(rh)
+            local rhmat = isnumber(rh) and rh >= 0 and ent:GetBoneMatrix(rh)
+            if not rhmat then
+                holdingrh = nil
+            else
 
-            rhmat:SetTranslation(rhmat:GetTranslation() + VectorRand(-0.2, 0.2) * stammul)
+                rhmat:SetTranslation(rhmat:GetTranslation() + VectorRand(-0.2, 0.2) * stammul)
 
-            hg.bone_apply_matrix(ent, rh, rhmat)
+                hg.bone_apply_matrix(ent, rh, rhmat)
+            end
         end
         
         local lfinger = ent:LookupBone("ValveBiped.Bip01_L_Finger11")
-        local lfingerAngles = lfinger and ent:GetManipulateBoneAngles(lfinger)
+        local lfingerAngles = isnumber(lfinger) and lfinger >= 0 and ent:GetManipulateBoneAngles(lfinger)
         local holdinglh = lfingerAngles and lfingerAngles[2] < 0
         if holdinglh then
             local lh = ent:LookupBone("ValveBiped.Bip01_L_Hand")
-            local lhmat = ent:GetBoneMatrix(lh)
+            local lhmat = isnumber(lh) and lh >= 0 and ent:GetBoneMatrix(lh)
+            if not lhmat then
+                holdinglh = nil
+            else
 
-            lhmat:SetTranslation(lhmat:GetTranslation() + VectorRand(-0.2, 0.2) * stammul)
+                lhmat:SetTranslation(lhmat:GetTranslation() + VectorRand(-0.2, 0.2) * stammul)
 
-            hg.bone_apply_matrix(ent, lh, lhmat)
+                hg.bone_apply_matrix(ent, lh, lhmat)
+            end
         end
     end
 end

@@ -5,6 +5,57 @@ local function check(self, ent, ply)
     local pEnt = hg.RagdollOwner( ent )
     if ( ent:IsRagdoll() ) and pEnt and pEnt:IsPlayer() and pEnt:Alive() then return true end
 end
+
+local function NormalizeKnownPlayerClassName(name)
+	name = string.Trim(tostring(name or ""))
+	if name == "" then return "" end
+
+	local key = string.lower(name)
+	if key == "gordon" or key == "freeman" then return "Gordon" end
+	if key == "rebel" or key == "resistance" then return "Rebel" end
+	if key == "refugee" or key == "refuge" or key == "citizen" then return "Refugee" end
+	if key == "combine" or key == "overwatch" then return "Combine" end
+	if key == "metrocop" or key == "metropolice" or key == "civilprotection" or key == "civil_protection" then return "Metrocop" end
+
+	return name
+end
+
+local function GetKnownPlayerClassOptions()
+	local out = {}
+	local seen = {}
+
+	local function addOne(name)
+		name = NormalizeKnownPlayerClassName(name)
+		if name == "" then return end
+
+		local key = string.lower(name)
+		if seen[key] then return end
+
+		seen[key] = true
+		out[#out + 1] = name
+	end
+
+	if istable(player) and istable(player.classList) then
+		for name in pairs(player.classList) do
+			addOne(name)
+		end
+	end
+
+	local classFiles = file.Find("homigrad/playerclass/classes/sh_*.lua", "LUA") or {}
+	for _, fileName in ipairs(classFiles) do
+		local slug = string.match(string.lower(fileName), "^sh_([%w_]+)%.lua$")
+		if slug then
+			addOne(slug)
+		end
+	end
+
+	table.sort(out, function(a, b)
+		return string.lower(a) < string.lower(b)
+	end)
+
+	return out
+end
+
 properties.Add( "notify", {
 	MenuLabel = "Notify", -- Name to display on the context menu
 	Order = 1, -- The order to display this property relative to other properties
@@ -376,16 +427,27 @@ properties.Add( "setplayerclass", {
 	Receive = function( self, length, ply )
 		local ent = net.ReadEntity()
 		local class = net.ReadString( )
+		local canonical = NormalizeKnownPlayerClassName(class)
 
 		ent = hg.RagdollOwner(ent) or hg.GetCurrentCharacter(ent) or ent
-		if IsValid(ent) and ent:IsPlayer() and player.classList[class] then
-			ent:SetPlayerClass(class)
+		if istable(player) and istable(player.classList) and not player.classList[canonical] then
+			local want = string.lower(canonical)
+			for existing in pairs(player.classList) do
+				if string.lower(existing) == want then
+					canonical = existing
+					break
+				end
+			end
+		end
+
+		if IsValid(ent) and ent:IsPlayer() and player.classList[canonical] then
+			ent:SetPlayerClass(canonical)
 		end
 	end,
 	MenuOpen = function( self, option, ent, tr )
 		local submenu = option:AddSubMenu()
 
-		for name, tbl in pairs(player.classList) do
+		for _, name in ipairs(GetKnownPlayerClassOptions()) do
 			local opt = submenu:AddOption(name)
 			opt:SetRadio(true)
 			opt:SetChecked(ent.PlayerClassName == name)

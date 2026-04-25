@@ -1933,15 +1933,17 @@ function SWEP:GetAdditionalValues()
 	
 	if not huypitch then
 		local torso = ply:LookupBone("ValveBiped.Bip01_Spine1")
-		local tmat = ent:GetBoneMatrix(torso)
-		
-		if tmat then
-			local ang2 = tmat:GetAngles():Forward()
-			local dot = math.min((ang2:Dot(ply:GetAimVector()) + 0.5) * 4, 0)
-			//dot = dot < -0.5 and dot + 0.5 or 0
-			//dot = dot * 3
+		if torso and torso ~= -1 then
+			local tmat = ent:GetBoneMatrix(torso)
+			
+			if tmat then
+				local ang2 = tmat:GetAngles():Forward()
+				local dot = math.min((ang2:Dot(ply:GetAimVector()) + 0.5) * 4, 0)
+				//dot = dot < -0.5 and dot + 0.5 or 0
+				//dot = dot * 3
 
-			self.AdditionalPos2[1] = self.AdditionalPos2[1] + dot * -2
+				self.AdditionalPos2[1] = self.AdditionalPos2[1] + dot * -2
+			end
 		end
 	end
 
@@ -2228,7 +2230,7 @@ function SWEP:SetHandPos(noset)
 		local model = self:GetAttachmentModel("grip")
 		
 		local inf = self:GetAttachmentInfo("grip")
-		if not inf.ShouldtUseLHand then
+		if inf and not inf.ShouldtUseLHand then
 			if inf and inf.LHandPos and IsValid(model) then
 				local infpos, infang = inf.LHandPos, inf.LHandAng
 				vec2, ang2 = LocalToWorld(infpos, infang, model:GetPos(), model:GetAngles())

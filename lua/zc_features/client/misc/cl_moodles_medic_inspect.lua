@@ -138,7 +138,14 @@ local function isMedicInspector(ply)
     return false
 end
 
+local function isHiddenRoundActive()
+    local round = CurrentRound and CurrentRound()
+    return round and round.name == "hidden"
+end
+
 local function getInspectTarget()
+    if isHiddenRoundActive() then return nil end
+
     local lp = LocalPlayer()
     if not IsValid(lp) or not lp:Alive() then return nil end
     if not lp.organism or lp.organism.otrub then return nil end
@@ -325,6 +332,7 @@ end
 
 hook.Add("HUDPaint", "DCityPatch_MoodlesMedicInspect", function()
     if not cv_enabled:GetBool() then return end
+    if isHiddenRoundActive() then return end
 
     local target = getInspectTarget()
     if not IsValid(target) then return end

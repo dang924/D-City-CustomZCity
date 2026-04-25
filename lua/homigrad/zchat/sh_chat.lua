@@ -174,7 +174,7 @@ if CLIENT then
 
 		if speaker.PlayerClassName == "furry" then
 			buffer[#buffer + 1] = "<font=ZB_ProotOSChat>"
-		elseif speaker:IsBerserk() then
+		elseif speaker:IsBerserk() and not (ZC_ShouldSuppressSubject617BerserkFX and ZC_ShouldSuppressSubject617BerserkFX(speaker)) then
 			buffer[#buffer + 1] = "<font=BerserkChatFont>"
 		end
 	end)

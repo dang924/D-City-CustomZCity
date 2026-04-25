@@ -94,15 +94,29 @@ end
 function SWEP:HasAttachment(whereabouts, attachment)
 	if whereabouts == "sight" and attachment == "optic" and self.scopedef then return true, false end
 	if not self.attachments then return false end
-	local has = self.attachments[whereabouts]
-	if not has or table.IsEmpty(has) then return false end
+	local attEntry = self.attachments[whereabouts]
+	if not istable(attEntry) or table.IsEmpty(attEntry) then return false end
+
+	local attName = attEntry[1]
+	if not isstring(attName) or attName == "" then return false end
+
+	local has = false
 	if attachment then
-		has = string.find(has[1], attachment) and true
+		if isstring(attachment) then
+			has = isstring(attName) and string.find(attName, attachment, 1, true) and true or false
+		end
 	else
-		has = has[1] ~= "empty"
+		has = attName ~= "empty"
 	end
-	
-	return has and self.attachments[whereabouts], has and hg.attachments[whereabouts][self.attachments[whereabouts][1]]
+
+	if not has then
+		return false
+	end
+
+	local placementTable = istable(hg) and istable(hg.attachments) and hg.attachments[whereabouts] or nil
+	local attData = istable(placementTable) and placementTable[attName] or nil
+
+	return attEntry, attData
 end
 
 function SWEP:GetAttachmentModel(whereabouts, attachment)
@@ -179,9 +193,24 @@ function SWEP:DrawAttachments()
 	self.modelAtt = self.modelAtt or {}
 	local flagRemovehuy = false
 	for plc,att in pairs(self.attachments) do
-		local attdata = hg.attachments[plc][att[1]]
+		if not istable(att) then continue end
+		local attName = att[1]
+		if not isstring(attName) or attName == "" then continue end
+
+		local placementAttachments = istable(hg) and istable(hg.attachments) and hg.attachments[plc] or nil
+		local attdata = istable(placementAttachments) and placementAttachments[attName] or nil
+		if not istable(attdata) then continue end
 		
-		local tblhuy = self:HasAttachment(plc) and available[plc] and ((available[plc][att[1]] and istable(available[plc][att[1]]) and available[plc][att[1]][2]) or (istable(available[plc]["removehuy"]) and available[plc]["removehuy"][attdata.mountType] or available[plc]["removehuy"]))
+		local removehuy = nil
+		if available[plc] then
+			if istable(available[plc]["removehuy"]) then
+				removehuy = available[plc]["removehuy"][attdata.mountType]
+			else
+				removehuy = available[plc]["removehuy"]
+			end
+		end
+
+		local tblhuy = self:HasAttachment(plc) and available[plc] and ((available[plc][attName] and istable(available[plc][attName]) and available[plc][attName][2]) or removehuy)
 		if tblhuy then flagRemovehuy = true end
 		
 		if not tblhuy and not flagRemovehuy then tblhuy = att[2] end
@@ -195,7 +224,7 @@ function SWEP:DrawAttachments()
 			end
 		end
 		--print(att[1])
-		if not self:HasAttachment(plc,att[1]) then continue end
+		if not self:HasAttachment(plc,attName) then continue end
 
 		local model = self.modelAtt[plc]
 		
@@ -373,6 +402,11 @@ end
 
 if SERVER then
 	util.AddNetworkString("hmcd_togglelaser")
+	local function canToggleLaser(wep)
+		if not IsValid(wep) or not wep.attachments then return false end
+		return wep:HasAttachment("underbarrel") or wep.laser
+	end
+
 	local laserThingies = {
 		[0] = 1,
 		[1] = 0,
@@ -382,8 +416,7 @@ if SERVER then
 
 	concommand.Add("hmcd_togglelaser", function(ply, cmd, args)
 		local wep = ply:GetActiveWeapon()
-		if not IsValid(wep) or not wep.attachments then return end
-		if not wep:HasAttachment("underbarrel") then return end
+		if not canToggleLaser(wep) then return end
 		wep.lasertoggle = laserThingies[wep.lasertoggle or 0]
 		ply:EmitSound("weapons/ump45/ump45_fireselect.wav", 65)
 		net.Start("hmcd_togglelaser")
@@ -401,8 +434,7 @@ if SERVER then
 
 	hook.Add("PlayerSwitchFlashlight", "flashlightHuy", function(ply)
 		local wep = ply:GetActiveWeapon()
-		if not IsValid(wep) or not wep.attachments then return end
-		if not wep:HasAttachment("underbarrel") then return false end
+		if not canToggleLaser(wep) then return end
 		wep.lasertoggle = flashlightThingies[wep.lasertoggle or 0]
 		ply:EmitSound("weapons/ump45/ump45_fireselect.wav", 65)
 		net.Start("hmcd_togglelaser")
@@ -451,8 +483,14 @@ if CLIENT then
 		
 		local model = self.modelAtt["underbarrel"] or self:GetWeaponEntity()
 		if not IsValid(model) then return end
-		local pos, anga = model:GetPos(), model:GetAngles()
-		local pos, ang = LocalToWorld(attachmentData.offsetPos or vecZero, attachmentData.offsetAng or angZero, pos, anga)
+		local pos, ang
+		if self.GetLaserOrigin then
+			pos, ang = self:GetLaserOrigin(model, attachmentData)
+		end
+		if not pos or not ang then
+			local modelPos, modelAng = model:GetPos(), model:GetAngles()
+			pos, ang = LocalToWorld(attachmentData.offsetPos or vecZero, attachmentData.offsetAng or angZero, modelPos, modelAng)
+		end
 		//local tr, _, _ = self:GetTrace()
 		
 		//if not IsValid(self:GetOwner()) or not self:GetOwner():IsPlayer() then ang = anga end

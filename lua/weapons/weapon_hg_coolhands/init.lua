@@ -759,13 +759,13 @@ function SWEP:AttackFront(special_attack, rand)
 			SelfForce = 25
 			if Ent:IsPlayer() and IsValid(Ent:GetActiveWeapon()) and Ent:GetActiveWeapon().GetBlocking and Ent:GetActiveWeapon():GetBlocking() and not RagdollOwner(Ent) then
 				sound.Play( owner.PlayerClassName == "furry" and "pwb/weapons/knife/hit"..math_random(1,4)..".wav" or "weapons/melee/blunt_light"..math_random(8)..".wav", HitPos, 60, math_random(90, 110))
-				if owner:IsBerserk() then
+				if owner:IsBerserk() and not (ZC_ShouldSuppressSubject617BerserkFX and ZC_ShouldSuppressSubject617BerserkFX(owner)) then
 					sound.Play("zbattle/berserk/unarmed" .. math_random(1, 9) .. ".wav", HitPos, 90, math_random(90, 110), 0.1 + owner.organism.berserk / 2)
 				end
 			else
 				local snd = special_attack and "weapons/melee/blunt_heavy"..math_random(6)..".wav" or "Flesh.ImpactHard"
 				sound.Play( owner.PlayerClassName == "furry" and "pwb/weapons/knife/hit"..math_random(1,4)..".wav" or snd, HitPos, 80, math_random(90, 110))
-				if owner:IsBerserk() then
+				if owner:IsBerserk() and not (ZC_ShouldSuppressSubject617BerserkFX and ZC_ShouldSuppressSubject617BerserkFX(owner)) then
 					sound.Play("zbattle/berserk/unarmed" .. math_random(1, 9) .. ".wav", HitPos, 90, math_random(90, 110), 0.1 + owner.organism.berserk / 2)
 				end
 			end
@@ -786,7 +786,7 @@ function SWEP:AttackFront(special_attack, rand)
 				hg.organism.AddWoundManual(owner, math_random(6, 8) * (special_attack and 2 or 1), vector_origin, AngleRand(), owner:LookupBone("ValveBiped.Bip01_"..(rand and "R" or "L").."_Hand"), CurTime())
 			end
 			sound.Play(owner.PlayerClassName == "furry" and "pwb/weapons/knife/hitwall.wav" or "weapons/melee/blunt_light"..math_random(8)..".wav", HitPos, 65, math_random(90, 110))
-			if owner:IsBerserk() then
+			if owner:IsBerserk() and not (ZC_ShouldSuppressSubject617BerserkFX and ZC_ShouldSuppressSubject617BerserkFX(owner)) then
 				sound.Play(table.Random(concrete), HitPos, 90, math_random(90, 110), 0.1 + owner.organism.berserk / 2)
 				util.Decal("Rollermine.Crater",HitPos + owner:EyeAngles():Forward() * -1,HitPos - owner:EyeAngles():Forward() * -1, Ent)
 			end

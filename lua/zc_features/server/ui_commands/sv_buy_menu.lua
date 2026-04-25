@@ -320,6 +320,8 @@ local function Initialize()
         { label = "PSO-1M2 (Alt)", attKey = "optic11", attPlacement = "sight", price = 0, category = "Attachments" },
         { label = "EOTech Vudu", attKey = "optic12", attPlacement = "sight", price = 0, category = "Attachments" },
         { label = "NPZ PAG-17", attKey = "optic13", attPlacement = "sight", price = 0, category = "Attachments" },
+        { label = "Torrey T12W Thermal", attKey = "optic14", attPlacement = "sight", price = 0, category = "Attachments" },
+        { label = "Ultima DIY Thermal", attKey = "optic15", attPlacement = "sight", price = 0, category = "Attachments" },
         { label = "MBUS Rear", attKey = "ironsight1", attPlacement = "sight", price = 0, category = "Attachments" },
         { label = "A2 Rear", attKey = "ironsight2", attPlacement = "sight", price = 0, category = "Attachments" },
         { label = "A2 Front", attKey = "ironsight3", attPlacement = "sight", price = 0, category = "Attachments" },
@@ -362,6 +364,9 @@ local function Initialize()
         { label = "Bloodbag",        class = "weapon_bloodbag",       price = 180,  category = "Medical" },
         { label = "Needle",          class = "weapon_needle",         price = 70,   category = "Medical" },
         { label = "Mannitol",        class = "weapon_mannitol",       price = 110,  category = "Medical" },
+
+        -- IRIS gear (occupies secondary slot, like a sidearm tablet).
+        { label = "Solitron Heartbeat Sensor", class = "weapon_solitron_radar", price = 350, category = "Pistols" },
 
         --[[ ─────────────────────────────────────────────────────────────────────────
         Z-FUN WEAPON PACK ENTRIES

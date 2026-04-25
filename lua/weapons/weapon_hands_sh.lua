@@ -1548,7 +1548,7 @@ function SWEP:AttackFront(special_attack, rand)
 					snd = "pwb/weapons/knife/hit"..math.random(4)..".wav"
 				end
 				sound.Play(snd, HitPos, 65, math.random(90, 110))
-				if owner:IsBerserk() then
+				if owner:IsBerserk() and not (ZC_ShouldSuppressSubject617BerserkFX and ZC_ShouldSuppressSubject617BerserkFX(owner)) then
 					sound.Play("zbattle/berserk/unarmed" .. math.random(1, 9) .. ".wav", HitPos, 90, math.random(90, 110), 0.1 + owner.organism.berserk / 2)
 				end
 			else
@@ -1559,7 +1559,7 @@ function SWEP:AttackFront(special_attack, rand)
 					snd = "pwb/weapons/knife/hit"..math.random(4)..".wav"
 				end
 				sound.Play(snd, HitPos, 65, math.random(90, 110))
-				if owner:IsBerserk() then
+				if owner:IsBerserk() and not (ZC_ShouldSuppressSubject617BerserkFX and ZC_ShouldSuppressSubject617BerserkFX(owner)) then
 					sound.Play("zbattle/berserk/unarmed" .. math.random(1, 9) .. ".wav", HitPos, 90, math.random(90, 110), 0.1 + owner.organism.berserk / 2)
 				end
 			end
@@ -1582,7 +1582,7 @@ function SWEP:AttackFront(special_attack, rand)
 				snd = "pwb/weapons/knife/hitwall.wav"
 			end
 			sound.Play(snd, HitPos, 65, math.random(90, 110))
-			if owner:IsBerserk() then
+			if owner:IsBerserk() and not (ZC_ShouldSuppressSubject617BerserkFX and ZC_ShouldSuppressSubject617BerserkFX(owner)) then
 				sound.Play(concrete[math.random(#concrete)], HitPos, 90, math.random(90, 110), 0.1 + owner.organism.berserk / 2)
 				util.Decal("Rollermine.Crater",HitPos + owner:EyeAngles():Forward() * -1,HitPos - owner:EyeAngles():Forward() * -1, Ent)
 			end

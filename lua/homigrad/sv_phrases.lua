@@ -457,7 +457,10 @@ concommand.Add("hg_phrase_context",function(ply, cmd, args)
 	result = hook.Run("HG_Phrase_Context", ply, cmd, args) // return here true to reject phrase 
 	if result then return end
 
-	local phrase = contextPhrases[ThatPlyIsFemale(ply) and 2 or 1][args[1]]
+	local source = hg.GetContextPhrasesForPlayer and hg.GetContextPhrasesForPlayer(ply) or contextPhrases[ThatPlyIsFemale(ply) and 2 or 1]
+	if not istable(source) then return end
+
+	local phrase = source[args[1]]
 	if !phrase then return end
 
 	phrase = args[2] and phrase[tonumber(args[2])] or table.Random(phrase)
