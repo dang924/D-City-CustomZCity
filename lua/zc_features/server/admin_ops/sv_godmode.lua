@@ -1,13 +1,36 @@
--- sv_godmode.lua — Organism godmode for all players.
+-- sv_godmode.lua — Organism godmode for all players or specific players.
 -- Wraps ZCity's own damage hooks + blocks Fake/Stun/Amputate after load order.
 
 if CLIENT then return end
 
 ZC_OrgGodMode = ZC_OrgGodMode or false
+ZC_OrgGodModePlayers = ZC_OrgGodModePlayers or {}
+
+function ZC_SetPlayerOrganismGodMode(ply, enabled)
+    if not IsValid(ply) or not ply:IsPlayer() then return false end
+
+    if enabled then
+        ZC_OrgGodModePlayers[ply] = true
+    else
+        ZC_OrgGodModePlayers[ply] = nil
+    end
+
+    return true
+end
+
+function ZC_GetPlayerOrganismGodMode(ply)
+    return IsValid(ply) and ply:IsPlayer() and ZC_OrgGodModePlayers[ply] == true or false
+end
 
 local function isGodTarget(ent)
-    return ZC_OrgGodMode and IsValid(ent) and ent:IsPlayer()
+    if not IsValid(ent) or not ent:IsPlayer() then return false end
+    if ZC_OrgGodMode then return true end
+    return ZC_GetPlayerOrganismGodMode(ent)
 end
+
+hook.Add("PlayerDisconnected", "ZC_OrgGodMode_PlayerCleanup", function(ply)
+    ZC_OrgGodModePlayers[ply] = nil
+end)
 
 -- Wrap core ZCity functions after they have been defined (post load order)
 local function WrapZCityFunctions()
@@ -75,7 +98,7 @@ end
 -- Safety net: after all Org Think hooks run, reset any state that slipped through
 -- (e.g. bleed from sources other than direct damage, NPC fire, gas, etc.)
 hook.Add("Org Think", "ZC_OrgGodMode_Normalize", function(owner, org, timeValue)
-    if not ZC_OrgGodMode then return end
+    if not isGodTarget(owner) then return end
     if not IsValid(owner) or not owner:IsPlayer() then return end
 
     org.alive         = true

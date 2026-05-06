@@ -371,7 +371,9 @@ local Angle, Vector, AngleRand, VectorRand, math, hook, util, game = Angle, Vect
 		k = k * math.Clamp(consmul, 0.7, 1)
 		k = k * math.Clamp((org.temperature and (1 - (org.temperature - 38) * 0.25) or 1), 0.5, 1)
 		k = k * math.Clamp((org.temperature and ((org.temperature - 35) * 0.25 + 1) or 1), 0.5, 1)
-		k = k * math.Clamp(math.Round((org.stamina and org.stamina[1] or 180), 0) / 120, hg_movement_stamina_debuff:GetFloat(), 1)
+		if not ply.zscav_disable_stamina_move_debuff then
+			k = k * math.Clamp(math.Round((org.stamina and org.stamina[1] or 180), 0) / 120, hg_movement_stamina_debuff:GetFloat(), 1)
+		end
 		k = k * math.Clamp(5 / ((org.immobilization or 0) + 1), 0.25, 1)
 		k = k * math.Clamp((org.blood or 0) / 5000, 0, 1)
 		k = k * math.Clamp(10 / ((org.shock or 0) + 1), 0.25, 1)

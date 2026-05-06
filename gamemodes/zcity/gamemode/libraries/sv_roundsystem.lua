@@ -10,6 +10,22 @@ end
 
 local forcemodeconvar = CreateConVar("zb_forcemode", "random", nil, "Set force mode (set to 'random' to disable)")
 forcemodeconvar:SetString("random")
+
+local ZSCAV_AUTO_PIN_MAP_PREFIXES = {
+	"rp_asheville",
+}
+
+local function isZScavAutoPinMap(mapName)
+	mapName = string.lower(tostring(mapName or game.GetMap() or ""))
+	for _, prefix in ipairs(ZSCAV_AUTO_PIN_MAP_PREFIXES) do
+		if string.StartWith(mapName, prefix) then
+			return true
+		end
+	end
+
+	return false
+end
+
 function zb:GetMode(round)
 	if zb.modes[round] then return round end
 
@@ -31,12 +47,46 @@ local function getForcedModeName()
 	return zb:GetMode(forced) or forced
 end
 
+local function hasZScavSetupData()
+	local mapName = string.lower(game.GetMap() or "unknown")
+	if not isZScavAutoPinMap(mapName) then
+		return false
+	end
+
+	local hasSafeSpawn = zb and zb.GetMapPoints and #((zb.GetMapPoints("ZSCAV_SAFESPAWN") or {})) > 0
+	if hasSafeSpawn then
+		return true
+	end
+
+	local zscavSpawnPath = "zcity/zscav_spawn_points/" .. mapName .. ".json"
+	local zscavSpawnBackupPath = "zcity/zscav_spawn_points/" .. mapName .. ".bak.json"
+	if file.Exists(zscavSpawnPath, "DATA") or file.Exists(zscavSpawnBackupPath, "DATA") then
+		return true
+	end
+
+	local zscavExtractPath = "zcity/zscav_extract_points/" .. mapName .. ".json"
+	local zscavExtractBackupPath = "zcity/zscav_extract_points/" .. mapName .. ".bak.json"
+	return file.Exists(zscavExtractPath, "DATA") or file.Exists(zscavExtractBackupPath, "DATA")
+end
+
 local function getPinnedMapMode()
+	if getForcedModeName() then
+		return nil
+	end
+
+	local mapName = string.lower(game.GetMap() or "")
+	if isZScavAutoPinMap(mapName) then
+		return "zscav"
+	end
+
+	if string.StartWith(mapName, "rp_") then
+		return "event"
+	end
+
 	if IsValid(ents.FindByClass( "trigger_changelevel" )[1]) then
 		return "coop"
 	end
 
-	local mapName = string.lower(game.GetMap() or "")
 	if string.StartWith(mapName, "hdn_") or string.StartWith(mapName, "ovr_") then
 		return "hidden"
 	end
@@ -63,11 +113,18 @@ function CurrentRound()
 end
 
 function NextRound(round)
-	if IsValid(ents.FindByClass( "trigger_changelevel" )[1]) then
-		zb.nextround = "coop"
-	else
-		zb.nextround = round
+	if isstring(round) and round ~= "" then
+		zb.nextround = zb:GetMode(round) or round
+		return
 	end
+
+	local pinnedMode = getPinnedMapMode()
+	if pinnedMode then
+		zb.nextround = pinnedMode
+		return
+	end
+
+	zb.nextround = round
 end
 
 function zb:PreRound()
@@ -107,7 +164,10 @@ function zb:EndRound()
 	net.Broadcast()
 
 	--PrintMessage(HUD_PRINTTALK, "Раунд закончен.")
-	CurrentRound():EndRound()
+	local activeRound = CurrentRound()
+	if activeRound and activeRound.EndRound then
+		activeRound:EndRound()
+	end
 	hook.Run("ZB_EndRound")
 	zb.AddFade()
 
@@ -134,14 +194,19 @@ zb.ROUND_TIME = zb.ROUND_TIME or 300
 
 function zb:ShouldRoundEnd()
 	local time = zb.ROUND_TIME
-	local shouldroundend = CurrentRound():ShouldRoundEnd()
+	local activeRound = CurrentRound()
+	if not activeRound or not activeRound.ShouldRoundEnd then
+		return false
+	end
+
+	local shouldroundend = activeRound:ShouldRoundEnd()
 	if shouldroundend ~= false then
 		local boringround = (zb.ROUND_START + time) < CurTime()
 
-		if boringround and CurrentRound().BoringRoundFunction then
+		if boringround and activeRound.BoringRoundFunction then
 			PrintMessage(HUD_PRINTTALK, "Stopping round because it was TOO boring.")
 
-			CurrentRound():BoringRoundFunction()
+			activeRound:BoringRoundFunction()
 		end
 
 		return (shouldroundend and true) or (boringround)
@@ -202,10 +267,18 @@ function zb:EndRoundThink()
 				end
 			end
 
-			CurrentRound().saved = {}
+			local activeRound = CurrentRound()
+			if not activeRound then return end
 
-			CurrentRound():Intermission()
-			CurrentRound():GiveEquipment()
+			activeRound.saved = {}
+
+			if activeRound.Intermission then
+				activeRound:Intermission()
+			end
+
+			if activeRound.GiveEquipment then
+				activeRound:GiveEquipment()
+			end
 		end
 	end
 end
@@ -607,7 +680,10 @@ function zb:RoundStart()
 
 	zb.AddCurrentModePlayed()
 
-	CurrentRound():RoundStart()
+	local activeRound = CurrentRound()
+	if activeRound and activeRound.RoundStart then
+		activeRound:RoundStart()
+	end
 
 	local nextMode
 

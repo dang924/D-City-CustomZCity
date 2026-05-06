@@ -47,7 +47,6 @@ DEFENSE_MUSIC = {
 DEFENSE_WEAPONS = {
     [0] = {
         "weapon_akm",
-        "weapon_ar15",
         "weapon_akmwreked",
         "weapon_osipr",
         "weapon_sg552",
@@ -275,7 +274,7 @@ DEFENSE_COMMANDER_ECONOMY = {
 DEFENSE_COMMANDER_ITEMS = {
     ["Weapons"] = {
         {name = "AK-47", entity = "weapon_akm", price = 7, desc = "Reliable assault rifle with good damage", icon = "pwb/sprites/akm" },
-        {name = "M4A1", entity = "weapon_ar15", price = 6, desc = "Accurate assault rifle with moderate damage", icon = "vgui/wep_jack_hmcd_assaultrifle"},
+        {name = "M4A1", entity = "weapon_m4a1", price = 6, desc = "Accurate assault rifle with moderate damage", icon = "vgui/wep_jack_hmcd_assaultrifle"},
         {name = "MP5", entity = "weapon_mp5", price = 3, desc = "Fast-firing SMG with controllable recoil", icon = "vgui/hud/tfa_inss_mp5a2"},
         {name = "M249", entity = "weapon_m249", price = 15, desc = "Heavy machine gun with large magazine", icon = "pwb2/vgui/weapons/m249paratrooper"},
         {name = "Desert Eagle", entity = "weapon_deagle", price = 2, desc = "Powerful pistol with high stopping power", icon = "pwb2/vgui/weapons/deserteagle"}

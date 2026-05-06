@@ -24,13 +24,3 @@ Gameplay intent (ZCity)
 -----------------------
   Coop: Rebels + Gordon vs Combine NPCs; protect friendly/scripted NPCs.
   After Gordon dies: Combine players spawn and cooperate with Combine NPCs vs remaining Rebels.
-
-Key files (examples)
---------------------
-  autorun_server_sv_npc_relationships — Combine NPC targeting / rebel acquisition
-  autorun_server_sv_bullseye_refresh    — Faction relationships / sniper filter
-  autorun_server_sv_patch_player_factions — Rebel vs Combine player detection
-  autorun_server_sv_default_coop_bootstrap — round flow
-
-Regenerate feature key list if you add/remove .lua files under lua/:
-  Rebuild lua/dcitypack/dcp_feat_keys.lua (same pattern: path after lua/ with slashes -> underscores).

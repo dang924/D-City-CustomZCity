@@ -27,6 +27,10 @@ local function BuildStateFromWeapon(wep)
     local muPos = VecOrDefault(wep.LocalMuzzlePos)
     local muAng = AngOrDefault(wep.LocalMuzzleAng)
     local trAng = AngOrDefault(wep.TraceAngOffset)
+    local handVec = VecOrDefault(wep.offsetVec)
+    local handAng = AngOrDefault(wep.offsetAng)
+    local worldVec = VecOrDefault(wep.ofsV)
+    local worldAng = AngOrDefault(wep.ofsA)
 
     return {
         class = wep:GetClass(),
@@ -42,6 +46,10 @@ local function BuildStateFromWeapon(wep)
         hasTraceMul = wep.GarandTraceMultiplier ~= nil,
         hasADSTraceToggle = wep.GarandUseADSTrace ~= nil,
         hasTraceOffsetToggle = wep.GarandEnableTraceOffset ~= nil,
+        hasHoldOffsetVec = wep.offsetVec ~= nil,
+        hasHoldOffsetAng = wep.offsetAng ~= nil,
+        hasWorldOffsetVec = wep.ofsV ~= nil,
+        hasWorldOffsetAng = wep.ofsA ~= nil,
 
         zoom_x = zoom[1],
         zoom_y = zoom[2],
@@ -78,6 +86,22 @@ local function BuildStateFromWeapon(wep)
         use_ads_trace = wep.GarandUseADSTrace ~= false,
         use_trace_offset = wep.GarandEnableTraceOffset ~= false,
 
+        holdvec_x = handVec[1],
+        holdvec_y = handVec[2],
+        holdvec_z = handVec[3],
+
+        holdang_p = handAng[1],
+        holdang_y = handAng[2],
+        holdang_r = handAng[3],
+
+        worldvec_x = worldVec[1],
+        worldvec_y = worldVec[2],
+        worldvec_z = worldVec[3],
+
+        worldang_p = worldAng[1],
+        worldang_y = worldAng[2],
+        worldang_r = worldAng[3],
+
         show_hit_debug = GetConVar("hg_show_hitposmuzzle") and GetConVar("hg_show_hitposmuzzle"):GetBool() or false,
         set_zoom_mode = GetConVar("hg_setzoompos") and GetConVar("hg_setzoompos"):GetBool() or false,
     }
@@ -101,6 +125,11 @@ local function ApplyStateLocal(wep, s)
     if s.hasTraceMul then wep.GarandTraceMultiplier = s.trace_mul end
     if s.hasADSTraceToggle then wep.GarandUseADSTrace = s.use_ads_trace ~= false end
     if s.hasTraceOffsetToggle then wep.GarandEnableTraceOffset = s.use_trace_offset ~= false end
+
+    if s.hasHoldOffsetVec then wep.offsetVec = Vector(s.holdvec_x, s.holdvec_y, s.holdvec_z) end
+    if s.hasHoldOffsetAng then wep.offsetAng = Angle(s.holdang_p, s.holdang_y, s.holdang_r) end
+    if s.hasWorldOffsetVec then wep.ofsV = Vector(s.worldvec_x, s.worldvec_y, s.worldvec_z) end
+    if s.hasWorldOffsetAng then wep.ofsA = Angle(s.worldang_p, s.worldang_y, s.worldang_r) end
 end
 
 local function BuildPayload(s)
@@ -118,6 +147,10 @@ local function BuildPayload(s)
     if s.hasTraceMul then out.GarandTraceMultiplier = s.trace_mul end
     if s.hasADSTraceToggle then out.GarandUseADSTrace = s.use_ads_trace ~= false end
     if s.hasTraceOffsetToggle then out.GarandEnableTraceOffset = s.use_trace_offset ~= false end
+    if s.hasHoldOffsetVec then out.offsetVec = {x = s.holdvec_x, y = s.holdvec_y, z = s.holdvec_z} end
+    if s.hasHoldOffsetAng then out.offsetAng = {p = s.holdang_p, y = s.holdang_y, r = s.holdang_r} end
+    if s.hasWorldOffsetVec then out.ofsV = {x = s.worldvec_x, y = s.worldvec_y, z = s.worldvec_z} end
+    if s.hasWorldOffsetAng then out.ofsA = {p = s.worldang_p, y = s.worldang_y, r = s.worldang_r} end
 
     return out
 end
@@ -142,6 +175,10 @@ local function PrintState(s)
     if s.hasTraceMul then table.insert(lines, string.format("SWEP.GarandTraceMultiplier = %.4f", s.trace_mul)) end
     if s.hasADSTraceToggle then table.insert(lines, string.format("SWEP.GarandUseADSTrace = %s", s.use_ads_trace and "true" or "false")) end
     if s.hasTraceOffsetToggle then table.insert(lines, string.format("SWEP.GarandEnableTraceOffset = %s", s.use_trace_offset and "true" or "false")) end
+    if s.hasHoldOffsetVec then table.insert(lines, string.format("SWEP.offsetVec = Vector(%.4f, %.4f, %.4f)", s.holdvec_x, s.holdvec_y, s.holdvec_z)) end
+    if s.hasHoldOffsetAng then table.insert(lines, string.format("SWEP.offsetAng = Angle(%.4f, %.4f, %.4f)", s.holdang_p, s.holdang_y, s.holdang_r)) end
+    if s.hasWorldOffsetVec then table.insert(lines, string.format("SWEP.ofsV = Vector(%.4f, %.4f, %.4f)", s.worldvec_x, s.worldvec_y, s.worldvec_z)) end
+    if s.hasWorldOffsetAng then table.insert(lines, string.format("SWEP.ofsA = Angle(%.4f, %.4f, %.4f)", s.worldang_p, s.worldang_y, s.worldang_r)) end
 
     local out = table.concat(lines, "\n")
     print(out)
@@ -229,6 +266,30 @@ local function OpenTuner()
 
     if state.hasTraceMul then
         AddSlider("Trace Multiplier", "trace_mul", 0.1, 20, 3)
+    end
+
+    if state.hasHoldOffsetVec then
+        AddSlider("Hold Offset X", "holdvec_x", -24, 24, 4)
+        AddSlider("Hold Offset Y", "holdvec_y", -24, 24, 4)
+        AddSlider("Hold Offset Z", "holdvec_z", -24, 24, 4)
+    end
+
+    if state.hasHoldOffsetAng then
+        AddSlider("Hold Angle Pitch", "holdang_p", -180, 180, 3)
+        AddSlider("Hold Angle Yaw", "holdang_y", -180, 180, 3)
+        AddSlider("Hold Angle Roll", "holdang_r", -180, 180, 3)
+    end
+
+    if state.hasWorldOffsetVec then
+        AddSlider("World Offset X", "worldvec_x", -24, 24, 4)
+        AddSlider("World Offset Y", "worldvec_y", -24, 24, 4)
+        AddSlider("World Offset Z", "worldvec_z", -24, 24, 4)
+    end
+
+    if state.hasWorldOffsetAng then
+        AddSlider("World Angle Pitch", "worldang_p", -180, 180, 3)
+        AddSlider("World Angle Yaw", "worldang_y", -180, 180, 3)
+        AddSlider("World Angle Roll", "worldang_r", -180, 180, 3)
     end
 
     if state.hasZoomPos then

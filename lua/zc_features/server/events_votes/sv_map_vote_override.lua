@@ -15,13 +15,13 @@ hook.Add("InitPostEntity", "MapVote_OverrideRTV", function()
             if MapVoting then
                 if MapVoting.VoteActive then
                     ply:PrintMessage(HUD_PRINTTALK, "[MapVote] A vote is already in progress!")
-                    print("[MapVote] RTV block: vote already active for " .. ply:Nick())
+                    print("[MapVote] RTV block: vote already active for " .. ply:Nick() .. "[" .. (ply:SteamID64() or "unknown") .. "]")
                     return
                 end
                 
                 MapVoting:StartVote()
                 ply:PrintMessage(HUD_PRINTTALK, "[MapVote] You started a map vote! Type !mapvote to vote.")
-                print("[MapVote] RTV override: " .. ply:Nick() .. " started a vote")
+                print("[MapVote] RTV override: " .. ply:Nick() .. "[" .. (ply:SteamID64() or "unknown") .. "] started a vote")
                 return true
             else
                 ply:PrintMessage(HUD_PRINTTALK, "[MapVote] System not loaded yet")

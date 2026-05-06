@@ -61,7 +61,7 @@ DOD_CLASSES = {
         desc        = "Versatile rifleman with an automatic rifle. Good suppression capability.",
         weapons     = {
             [0] = { "weapon_akm",    "weapon_p38",       "weapon_m67",       "weapon_bandage_sh", "weapon_tourniquet" },
-            [1] = { "weapon_ar15",   "weapon_m1911",     "weapon_m67",       "weapon_bandage_sh", "weapon_tourniquet" },
+            [1] = { "weapon_m4a1",   "weapon_m1911",     "weapon_m67",       "weapon_bandage_sh", "weapon_tourniquet" },
         },
         attachments = {},
         armor       = { "vest3", "helmet1" },

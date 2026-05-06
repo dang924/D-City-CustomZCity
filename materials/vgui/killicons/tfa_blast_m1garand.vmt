@@ -1,9 +1,0 @@
-"UnlitGeneric"
-{
-	"$basetexture" "vgui/killicons/tfa_blast_m1garand"
-	"$vertexcolor"	"1"
-	"$vertexalpha"	"1"
-	"$translucent"	"1"
-	"$additive"	"1"
-}
-

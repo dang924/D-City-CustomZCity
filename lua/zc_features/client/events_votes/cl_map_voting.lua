@@ -1,251 +1,362 @@
 -- Map Voting System - Client Side
+-- Nexus-library styled. Vote menu + admin map manager.
 
 if SERVER then return end
 
-local COL_BG = Color(18, 20, 26)
-local COL_PANEL = Color(26, 29, 38)
-local COL_BORDER = Color(45, 50, 65)
-local COL_ACCENT = Color(100, 180, 255)
-local COL_ACCENT_DIM = Color(40, 80, 140)
-local COL_TEXT = Color(220, 225, 235)
-local COL_TEXT_DIM = Color(120, 130, 150)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- State
+-- ─────────────────────────────────────────────────────────────────────────────
 
-local FONT_TITLE = "MapVote_Title"
-local FONT_LABEL = "MapVote_Label"
-local FONT_SMALL = "MapVote_Small"
+local VoteFrame        = nil
+local AdminFrame       = nil
+local AvailableMaps    = {}
+local VoteCounts       = {}
+local TotalPlayers     = 0
+local PlayerVotedFor   = nil
+local VoteEndTime      = 0    -- CurTime() when the vote expires
+local EarlyWinMap      = nil  -- set when server broadcasts 70% countdown msg
+local IsTiebreaker     = false -- true during secondary tiebreaker round
 
-surface.CreateFont(FONT_TITLE, { font = "Tahoma", size = 18, weight = 700 })
-surface.CreateFont(FONT_LABEL, { font = "Tahoma", size = 13, weight = 600 })
-surface.CreateFont(FONT_SMALL, { font = "Tahoma", size = 11, weight = 400 })
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Helpers
+-- ─────────────────────────────────────────────────────────────────────────────
 
-local PAD = 12
-local HDR_H = 48
-local ROW_GAP = 8
-local ROW_H = 52
-local ICON_SIZE = 32
+local function NexusReady()
+    return Nexus and Nexus.Colors and Nexus.Colors.Background
+end
 
-local MapVotingFrame = nil
-local AvailableMaps = {}
-local VoteCounts = {}
-local TotalPlayers = 0
-local PlayerVotedFor = nil
+local function C(key) return NexusReady() and Nexus.Colors[key] or Color(0,0,0) end
+local function Scale(v) return NexusReady() and Nexus:Scale(v) or v end
+local function Font(sz, bold) return NexusReady() and Nexus:GetFont(sz, nil, bold) or "DermaDefault" end
 
-local MAP_ICON_PRESETS = {
-    ["gm_construct"] = "maps/thumb/gm_construct.png",
-    ["gm_flatgrass"] = "maps/thumb/gm_flatgrass.png",
-    ["gm_flatgrass_fxp"] = "maps/thumb/gm_flatgrass_fxp.png"
-}
-
-local function GetMapIconPath(mapname)
-    return MAP_ICON_PRESETS[mapname] or "icon16/world.png"
+local function CalcPct(votes)
+    if TotalPlayers <= 0 then return 0 end
+    return math.floor((votes / TotalPlayers) * 100)
 end
 
 local function CastVote(mapname)
     if not mapname or mapname == "" then return end
     if PlayerVotedFor == mapname then return end
-
     net.Start("MapVote_Cast")
     net.WriteString(mapname)
     net.SendToServer()
 end
 
-local function CalculatePercent(votes)
-    if TotalPlayers <= 0 then
-        return 0
-    end
-
-    return math.floor((votes / TotalPlayers) * 100)
-end
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Vote menu: update live counts without rebuilding
+-- ─────────────────────────────────────────────────────────────────────────────
 
 local function UpdateVoteCounts()
-    if not IsValid(MapVotingFrame) then return end
-
-    local list = MapVotingFrame.MapList
-    if not IsValid(list) then return end
-
-    for _, row in ipairs(list:GetChildren()) do
+    if not IsValid(VoteFrame) or not VoteFrame.Rows then return end
+    for _, row in ipairs(VoteFrame.Rows) do
         if IsValid(row) and row.MapName then
             local votes = VoteCounts[row.MapName] or 0
-            local pct = CalculatePercent(votes)
-
-            if IsValid(row.VoteLabel) then
-                row.VoteLabel:SetText(votes .. " votes")
+            local pct   = CalcPct(votes)
+            local needed = TotalPlayers > 0
+                and math.ceil(TotalPlayers * (IsTiebreaker and 0.5 or 0.7))
+                or 1
+            if IsValid(row.VoteInfo) then
+                row.VoteInfo:SetText(votes .. " / " .. needed .. "   (" .. pct .. "%)")
             end
-
-            if IsValid(row.PctLabel) then
-                row.PctLabel:SetText(pct .. "%")
-            end
-
             if IsValid(row.VoteBtn) then
-                local votedForThis = PlayerVotedFor == row.MapName
-                row.VoteBtn:SetText(votedForThis and "SELECTED" or (PlayerVotedFor and "CHANGE" or "VOTE"))
+                local sel = PlayerVotedFor == row.MapName
+                row.VoteBtn:SetText(sel and "SELECTED" or (PlayerVotedFor and "CHANGE" or "VOTE"))
+                row.VoteBtn:SetColor(sel and C("Green") or C("Primary"))
             end
+            -- progress bar fill stored on row
+            row.BarPct = pct / 100
         end
     end
 end
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Vote menu: build
+-- ─────────────────────────────────────────────────────────────────────────────
+
 local function CreateVotingMenu()
-    if IsValid(MapVotingFrame) then
-        MapVotingFrame:Remove()
+    if IsValid(VoteFrame) then VoteFrame:Remove() end
+    if not NexusReady() then
+        print("[MapVote] Nexus not ready, cannot open menu")
+        return
     end
 
-    MapVotingFrame = vgui.Create("DFrame")
-    MapVotingFrame:SetSize(560, 620)
-    MapVotingFrame:Center()
-    MapVotingFrame:SetDraggable(true)
-    MapVotingFrame:ShowCloseButton(true)
-    MapVotingFrame:SetTitle("")
-    MapVotingFrame:SetDeleteOnClose(true)
-    MapVotingFrame:MakePopup()
-    MapVotingFrame:SetMouseInputEnabled(true)
-    MapVotingFrame:SetKeyboardInputEnabled(false)
+    local W, H    = Scale(520), Scale(640)
+    local PAD     = Scale(10)
+    local ROW_H   = Scale(48)
+    local BAR_H   = Scale(4)
+    local TIMER_H = Scale(32)
 
-    function MapVotingFrame:OnRemove()
-        gui.EnableScreenClicker(false)
+    VoteFrame = vgui.Create("Nexus:Frame")
+    VoteFrame:SetSize(W, H)
+    VoteFrame:Center()
+    VoteFrame.Title = IsTiebreaker and "TIEBREAKER VOTE" or "MAP VOTE"
+    VoteFrame:MakePopup()
+    VoteFrame.Rows = {}
+
+    -- Timer bar at top (below header, above scroll)
+    local timerPanel = vgui.Create("DPanel", VoteFrame)
+    timerPanel:Dock(TOP)
+    timerPanel:SetTall(TIMER_H)
+    timerPanel:DockMargin(PAD, 0, PAD, PAD)
+    timerPanel.Paint = function(s, w, h)
+        draw.RoundedBox(Scale(4), 0, 0, w, h, C("Secondary"))
+        local remaining = math.max(0, VoteEndTime - CurTime())
+        local total     = MapVoting_Duration or 60
+        local frac      = remaining / total
+        -- progress bar
+        local barCol = IsTiebreaker and C("Orange") or C("Primary")
+        draw.RoundedBox(Scale(4), 0, 0, w * frac, h, barCol)
+        -- text
+        local threshold = IsTiebreaker and "50%" or "70%"
+        local txt = EarlyWinMap
+            and ("70% reached! Ending in " .. math.ceil(remaining) .. "s")
+            or  (IsTiebreaker
+                and ("TIEBREAKER — " .. threshold .. " required — " .. math.ceil(remaining) .. "s")
+                or  ("Time remaining: " .. math.ceil(remaining) .. "s"))
+        draw.SimpleText(txt, Font(14, true), w / 2, h / 2, C("Text"), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 
-    function MapVotingFrame:Think()
-        if self:IsKeyboardInputEnabled() then
-            self:SetKeyboardInputEnabled(false)
-        end
+    local scroll = vgui.Create("Nexus:ScrollPanel", VoteFrame)
+    scroll:Dock(FILL)
+    scroll:DockMargin(PAD, 0, PAD, PAD)
 
-        if not vgui.CursorVisible() then
-            gui.EnableScreenClicker(true)
-        end
-    end
-
-    gui.EnableScreenClicker(true)
-
-    function MapVotingFrame:Paint(w, h)
-        draw.RoundedBox(0, 0, 0, w, h, COL_BG)
-        draw.RoundedBoxEx(4, 0, 0, w, HDR_H, COL_ACCENT, true, true, false, false)
-        draw.SimpleText("MAP VOTE", FONT_TITLE, w / 2, 10, COL_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
-        draw.SimpleText("Vote can be changed any time. Type !mapvote to reopen", FONT_SMALL, w / 2, 30, COL_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
-    end
-
-    local Scroll = vgui.Create("DScrollPanel", MapVotingFrame)
-    Scroll:Dock(FILL)
-    Scroll:DockMargin(0, HDR_H, 0, 0)
-    Scroll.Paint = function(_, w, h)
-        draw.RoundedBox(0, 0, 0, w, h, COL_BG)
-    end
-
-    local VBar = Scroll:GetVBar()
-    VBar:SetWidth(6)
-    VBar.Paint = function(_, w, h)
-        draw.RoundedBox(2, 0, 0, w, h, COL_BORDER)
-    end
-    VBar.btnUp.Paint = function() end
-    VBar.btnDown.Paint = function() end
-    VBar.btnGrip.Paint = function(_, w, h)
-        draw.RoundedBox(2, 0, 0, w, h, COL_ACCENT)
-    end
-
-    local List = vgui.Create("DListLayout", Scroll)
-    List:Dock(FILL)
-    List:DockMargin(PAD, PAD, PAD, PAD)
-    if List.SetSpacing then
-        List:SetSpacing(ROW_GAP)
-    end
-    MapVotingFrame.MapList = List
+    local list = vgui.Create("DListLayout", scroll)
+    list:Dock(FILL)
 
     for _, mapname in ipairs(AvailableMaps) do
-        local row = vgui.Create("DPanel", List)
-        row:SetHeight(ROW_H)
-        row:DockMargin(0, 0, 0, ROW_GAP)
+        local row = vgui.Create("DPanel", list)
+        row:SetTall(ROW_H + BAR_H + Scale(4))
+        row:DockMargin(0, 0, 0, Scale(4))
         row.MapName = mapname
+        row.BarPct  = CalcPct(VoteCounts[mapname] or 0) / 100
 
-        function row:Paint(w, h)
-            draw.RoundedBox(4, 0, 0, w, h, COL_PANEL)
-            surface.SetDrawColor(COL_BORDER)
-            surface.DrawOutlinedRect(0, 0, w, h, 1)
+        row.Paint = function(s, w, h)
+            draw.RoundedBox(Scale(6), 0, 0, w, h, C("Secondary"))
+            -- progress fill
+            local fillW = math.max(Scale(6), w * (s.BarPct or 0))
+            draw.RoundedBox(Scale(4), 0, h - BAR_H, fillW, BAR_H, C("Primary"))
         end
-
-        local icon = vgui.Create("DImage", row)
-        icon:Dock(LEFT)
-        icon:DockMargin(PAD, (ROW_H - ICON_SIZE) / 2, PAD, (ROW_H - ICON_SIZE) / 2)
-        icon:SetSize(ICON_SIZE, ICON_SIZE)
-        icon:SetImage(GetMapIconPath(mapname))
 
         local nameLabel = vgui.Create("DLabel", row)
-        nameLabel:SetFont(FONT_LABEL)
+        nameLabel:SetFont(Font(16, true))
         nameLabel:SetText(mapname)
-        nameLabel:SetTextColor(COL_TEXT)
+        nameLabel:SetTextColor(C("Text"))
         nameLabel:Dock(LEFT)
-        nameLabel:SetWide(220)
+        nameLabel:DockMargin(PAD, 0, 0, BAR_H)
+        nameLabel:SetWide(Scale(200))
+        nameLabel:SetTall(ROW_H)
 
-        local voteLabel = vgui.Create("DLabel", row)
-        voteLabel:SetFont(FONT_SMALL)
-        voteLabel:SetText("0 votes")
-        voteLabel:SetTextColor(COL_TEXT_DIM)
-        voteLabel:Dock(LEFT)
-        voteLabel:SetWide(80)
-        row.VoteLabel = voteLabel
+        local voteInfo = vgui.Create("DLabel", row)
+        voteInfo:SetFont(Font(13))
+        voteInfo:SetText("0 / 1   (0%)")
+        voteInfo:SetTextColor(C("Text"))
+        voteInfo:Dock(LEFT)
+        voteInfo:DockMargin(0, 0, 0, BAR_H)
+        voteInfo:SetWide(Scale(140))
+        voteInfo:SetTall(ROW_H)
+        row.VoteInfo = voteInfo
 
-        local pctLabel = vgui.Create("DLabel", row)
-        pctLabel:SetFont(FONT_SMALL)
-        pctLabel:SetText("0%")
-        pctLabel:SetTextColor(COL_TEXT_DIM)
-        pctLabel:Dock(LEFT)
-        pctLabel:SetWide(48)
-        row.PctLabel = pctLabel
+        local btn = vgui.Create("Nexus:Button", row)
+        btn:SetText("VOTE")
+        btn:SetFont(Font(13, true))
+        btn:SetColor(C("Primary"))
+        btn:Dock(RIGHT)
+        btn:DockMargin(0, Scale(8), PAD, Scale(8) + BAR_H)
+        btn:SetWide(Scale(80))
+        btn:SetTall(ROW_H - Scale(16))
+        btn.DoClick = function() CastVote(mapname) end
+        row.VoteBtn = btn
 
-        local voteBtn = vgui.Create("DButton", row)
-        voteBtn:SetText("VOTE")
-        voteBtn:SetFont(FONT_SMALL)
-        voteBtn:Dock(RIGHT)
-        voteBtn:DockMargin(0, 10, PAD, 10)
-        voteBtn:SetWide(84)
-        row.VoteBtn = voteBtn
-
-        function voteBtn:Paint(w, h)
-            local isSelected = PlayerVotedFor == mapname
-            local col = isSelected and Color(70, 145, 90) or COL_ACCENT_DIM
-            if self:IsHovered() then
-                col = isSelected and Color(90, 175, 110) or COL_ACCENT
-            end
-
-            draw.RoundedBox(4, 0, 0, w, h, col)
-            draw.SimpleText(self:GetText(), FONT_SMALL, w / 2, h / 2, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            return true
-        end
-
-        voteBtn.DoClick = function()
-            CastVote(mapname)
-        end
+        table.insert(VoteFrame.Rows, row)
     end
 
     UpdateVoteCounts()
 end
 
-net.Receive("MapVote_StartVote", function()
-    AvailableMaps = net.ReadTable() or {}
-    VoteCounts = {}
-    TotalPlayers = #player.GetAll()
-    PlayerVotedFor = nil
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Admin map manager: side-by-side lists
+-- ─────────────────────────────────────────────────────────────────────────────
 
-    for _, mapname in ipairs(AvailableMaps) do
-        VoteCounts[mapname] = 0
+local AllServerMaps = {}
+local RTVMaps       = {}
+
+local function RefreshAdminLists()
+    if not IsValid(AdminFrame) then return end
+
+    -- Left list: all server maps not on RTV
+    local left = AdminFrame.LeftList
+    if IsValid(left) then
+        left:Clear()
+        for _, m in ipairs(AllServerMaps) do
+            if not table.HasValue(RTVMaps, m) then
+                local line = left:AddLine(m)
+                line.OnSelect = function()
+                    AdminFrame.Selected = m
+                    AdminFrame.SelectedSide = "left"
+                end
+            end
+        end
     end
 
+    -- Right list: maps currently on RTV
+    local right = AdminFrame.RightList
+    if IsValid(right) then
+        right:Clear()
+        for _, m in ipairs(RTVMaps) do
+            local line = right:AddLine(m)
+            line.OnSelect = function()
+                AdminFrame.Selected = m
+                AdminFrame.SelectedSide = "right"
+            end
+        end
+    end
+end
+
+local function CreateAdminPanel(allMaps, rtvMaps)
+    AllServerMaps = allMaps
+    RTVMaps       = rtvMaps
+
+    if IsValid(AdminFrame) then AdminFrame:Remove() end
+    if not NexusReady() then return end
+
+    local W, H  = Scale(700), Scale(540)
+    local PAD   = Scale(10)
+    local COL_W = (W - PAD * 3) / 2
+
+    AdminFrame = vgui.Create("Nexus:Frame")
+    AdminFrame:SetSize(W, H)
+    AdminFrame:Center()
+    AdminFrame.Title = "MAP MANAGER"
+    AdminFrame:MakePopup()
+    AdminFrame.Selected     = nil
+    AdminFrame.SelectedSide = nil
+
+    -- ── Header row: column titles + buttons ──────────────────────────────────
+    local hdr = vgui.Create("DPanel", AdminFrame)
+    hdr:Dock(TOP)
+    hdr:SetTall(Scale(36))
+    hdr:DockMargin(PAD, 0, PAD, Scale(4))
+    hdr.Paint = function(s, w, h)
+        draw.RoundedBox(Scale(4), 0, 0, w, h, C("Secondary"))
+        draw.SimpleText("ALL SERVER MAPS", Font(13, true), COL_W / 2, h / 2, C("Text"), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("RTV MAP POOL", Font(13, true), COL_W + PAD + COL_W / 2, h / 2, C("Text"), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+
+    -- ── Lists ─────────────────────────────────────────────────────────────────
+    local listArea = vgui.Create("DPanel", AdminFrame)
+    listArea:Dock(FILL)
+    listArea:DockMargin(PAD, 0, PAD, 0)
+    listArea.Paint = function() end
+
+    -- DListView has its own scrollbar; parent it directly so Dock(FILL) works.
+    local leftList = vgui.Create("DListView", listArea)
+    leftList:SetWide(COL_W)
+    leftList:Dock(LEFT)
+    leftList:AddColumn("Map")
+    leftList:SetMultiSelect(false)
+    AdminFrame.LeftList = leftList
+    leftList.OnRowSelected = function(_, _, line)
+        AdminFrame.Selected     = line:GetColumnText(1)
+        AdminFrame.SelectedSide = "left"
+    end
+
+    local mid = vgui.Create("DPanel", listArea)
+    mid:SetWide(Scale(80))
+    mid:Dock(LEFT)
+    mid:DockMargin(PAD, 0, PAD, 0)
+    mid.Paint = function() end
+
+    local addBtn = vgui.Create("Nexus:Button", mid)
+    addBtn:SetText("ADD →")
+    addBtn:SetFont(Font(12, true))
+    addBtn:SetColor(C("Green"))
+    addBtn:SetWide(Scale(80))
+    addBtn:SetTall(Scale(36))
+    addBtn:SetPos(0, Scale(160))
+    addBtn.DoClick = function()
+        if not AdminFrame.Selected or AdminFrame.SelectedSide ~= "left" then return end
+        net.Start("MapVote_AdminAddMap")
+        net.WriteString(AdminFrame.Selected)
+        net.SendToServer()
+        AdminFrame.Selected = nil
+    end
+
+    local remBtn = vgui.Create("Nexus:Button", mid)
+    remBtn:SetText("← REM")
+    remBtn:SetFont(Font(12, true))
+    remBtn:SetColor(C("Red"))
+    remBtn:SetWide(Scale(80))
+    remBtn:SetTall(Scale(36))
+    remBtn:SetPos(0, Scale(204))
+    remBtn.DoClick = function()
+        if not AdminFrame.Selected or AdminFrame.SelectedSide ~= "right" then return end
+        net.Start("MapVote_AdminRemoveMap")
+        net.WriteString(AdminFrame.Selected)
+        net.SendToServer()
+        AdminFrame.Selected = nil
+    end
+
+    local rightList = vgui.Create("DListView", listArea)
+    rightList:Dock(FILL)
+    rightList:AddColumn("Map")
+    rightList:SetMultiSelect(false)
+    AdminFrame.RightList = rightList
+    rightList.OnRowSelected = function(_, _, line)
+        AdminFrame.Selected     = line:GetColumnText(1)
+        AdminFrame.SelectedSide = "right"
+    end
+
+    RefreshAdminLists()
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Net receivers
+-- ─────────────────────────────────────────────────────────────────────────────
+
+MapVoting_Duration = 60  -- updated by StartVote message, used for timer bar
+
+net.Receive("MapVote_StartVote", function()
+    AvailableMaps  = net.ReadTable() or {}
+    MapVoting_Duration = net.ReadInt(32)
+    VoteEndTime    = CurTime() + MapVoting_Duration
+    VoteCounts     = {}
+    TotalPlayers   = #player.GetAll()
+    PlayerVotedFor = nil
+    EarlyWinMap    = nil
+    IsTiebreaker   = false
+
+    for _, m in ipairs(AvailableMaps) do VoteCounts[m] = 0 end
+    CreateVotingMenu()
+end)
+
+net.Receive("MapVote_TiebreakerStart", function()
+    AvailableMaps  = net.ReadTable() or {}
+    MapVoting_Duration = net.ReadInt(32)
+    VoteEndTime    = CurTime() + MapVoting_Duration
+    VoteCounts     = {}
+    TotalPlayers   = #player.GetAll()
+    PlayerVotedFor = nil
+    EarlyWinMap    = nil
+    IsTiebreaker   = true
+
+    for _, m in ipairs(AvailableMaps) do VoteCounts[m] = 0 end
     CreateVotingMenu()
 end)
 
 net.Receive("MapVote_OpenMenu", function()
-    AvailableMaps = net.ReadTable() or {}
-    VoteCounts = net.ReadTable() or {}
-    TotalPlayers = net.ReadInt(32)
+    AvailableMaps  = net.ReadTable() or {}
+    VoteCounts     = net.ReadTable() or {}
+    TotalPlayers   = net.ReadInt(32)
     PlayerVotedFor = net.ReadString()
+    local endTime  = net.ReadFloat()
+    VoteEndTime    = endTime > 0 and endTime or (CurTime() + 60)
 
-    if PlayerVotedFor == "" then
-        PlayerVotedFor = nil
-    end
-
+    if PlayerVotedFor == "" then PlayerVotedFor = nil end
     CreateVotingMenu()
 end)
 
 net.Receive("MapVote_UpdateCounts", function()
-    VoteCounts = net.ReadTable() or {}
+    VoteCounts   = net.ReadTable() or {}
     TotalPlayers = net.ReadInt(32)
     UpdateVoteCounts()
 end)
@@ -255,8 +366,36 @@ net.Receive("MapVote_CastSuccess", function()
     UpdateVoteCounts()
 end)
 
+net.Receive("MapVote_OpenAdminPanel", function()
+    local allMaps = net.ReadTable() or {}
+    local rtvMaps = net.ReadTable() or {}
+    CreateAdminPanel(allMaps, rtvMaps)
+end)
+
+-- Server replies to add/remove with updated RTV list
+net.Receive("MapVote_AdminResult", function()
+    local ok  = net.ReadBool()
+    local msg = net.ReadString()
+    RTVMaps   = net.ReadTable() or {}
+    chat.AddText(ok and Color(100,255,100) or Color(255,100,100), "[MapVote] " .. msg)
+    RefreshAdminLists()
+end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Console commands
+-- ─────────────────────────────────────────────────────────────────────────────
+
 concommand.Add("mapvote", function()
     net.Start("MapVote_OpenMenu")
+    net.SendToServer()
+end)
+
+concommand.Add("mapvote_admin", function()
+    if not LocalPlayer():IsAdmin() then
+        chat.AddText(Color(255,100,100), "[MapVote] Admins only.")
+        return
+    end
+    net.Start("MapVote_OpenAdminPanel")
     net.SendToServer()
 end)
 

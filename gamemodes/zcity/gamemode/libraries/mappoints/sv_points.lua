@@ -5,11 +5,47 @@ zb.Points = zb.Points or {}
 
 zb.Points.Example = zb.Points.Example or {}
 
+local function getMapPointsDir(mapName)
+    return "zbattle/mappoints/" .. tostring(mapName or game.GetMap() or "unknown")
+end
+
+local function getMapPointsPath(pointGroup, mapName)
+    return getMapPointsDir(mapName) .. "/" .. tostring(pointGroup or "") .. ".json"
+end
+
+local function getMapPointsBackupPath(pointGroup, mapName)
+    return getMapPointsDir(mapName) .. "/" .. tostring(pointGroup or "") .. ".bak.json"
+end
+
+local function readPointGroupData(pointGroup, mapName)
+    local primaryPath = getMapPointsPath(pointGroup, mapName)
+    local backupPath = getMapPointsBackupPath(pointGroup, mapName)
+
+    local function decode(path)
+        if not file.Exists(path, "DATA") then return nil end
+        local raw = file.Read(path, "DATA") or ""
+        if raw == "" then return nil end
+        local decoded = util.JSONToTable(raw)
+        if not istable(decoded) then return nil end
+        return decoded
+    end
+
+    local decoded = decode(primaryPath)
+    local loadedFromBackup = false
+    if not decoded then
+        decoded = decode(backupPath)
+        loadedFromBackup = istable(decoded)
+    end
+
+    return decoded or {}, loadedFromBackup
+end
+
 function zb.CreateMapDir()
     local map = game.GetMap()
-    if not file.Exists( "zbattle", "DATA" ) then file.CreateDir( "zbattle/mappoints" ) end
-    if not file.Exists( "zbattle/mappoints/" .. map, "DATA" ) then file.CreateDir( "zbattle/mappoints/" .. map ) end
-    if file.Exists( "zbattle/mappoints/" .. map, "DATA" ) then return true end
+    if not file.IsDir( "zbattle", "DATA" ) then file.CreateDir( "zbattle" ) end
+    if not file.IsDir( "zbattle/mappoints", "DATA" ) then file.CreateDir( "zbattle/mappoints" ) end
+    if not file.IsDir( getMapPointsDir(map), "DATA" ) then file.CreateDir( getMapPointsDir(map) ) end
+    if file.IsDir( getMapPointsDir(map), "DATA" ) then return true end
 end
 
 function zb.GetMapPoints( pointGroup, forceupdatepoints ) -- Загрузить точки в память игры... На клиенте будет примерно такая же функция.
@@ -24,8 +60,12 @@ function zb.GetMapPoints( pointGroup, forceupdatepoints ) -- Загрузить 
     end
 
     local map = game.GetMap()
+    local decoded, loadedFromBackup = readPointGroupData(pointGroup, map)
 
-    zb.Points[pointGroup].Points = util.JSONToTable( file.Read( "zbattle/mappoints/" .. map .. "/"..pointGroup..".json", "DATA" ) or "" ) 
+    zb.Points[pointGroup].Points = decoded
+    if loadedFromBackup then
+        zb.SaveMapPoints(pointGroup, zb.Points[pointGroup].Points)
+    end
     
     local newTbl = {}
     if zb.Points[pointGroup].Points then
@@ -41,8 +81,16 @@ function zb.SaveMapPoints( pointGroup, pointsData ) -- Сохранаяет вс
     if not zb.Points[pointGroup] then PrintMessage( HUD_PRINTTALK, "sv_points.lua: point group " .. "\"" .. pointGroup .. "\"" .. " doesn't exist." ) return false end
 
     local map = game.GetMap()
+    local json = util.TableToJSON( pointsData or {}, true ) or "[]"
 
-    file.Write( "zbattle/mappoints/" .. map .. "/" .. pointGroup .. ".json", util.TableToJSON( pointsData, true ) )
+    file.Write( getMapPointsPath(pointGroup, map), json )
+    file.Write( getMapPointsBackupPath(pointGroup, map), json )
+
+    local cached = {}
+    table.CopyFromTo(pointsData or {}, cached)
+    zb.Points[pointGroup].Points = cached
+
+    return true
 end
 
 -- pointData = { pos = Vector(), ang = Angle() } // Таблица пойнта
@@ -95,9 +143,9 @@ end
 
 function zb.GetAllPoints(forceupdate)
     forceupdate = forceupdate or true--ALWAYS TRUE LMAOOOOOO
-    allpoints = {}
+    local allpoints = {}
     for k, pointGroup in pairs(zb.Points) do
-        pointgroups = zb.GetMapPoints( k, forceupdate ) 
+        local pointgroups = zb.GetMapPoints( k, forceupdate ) 
         if not pointgroups then continue end
         allpoints[k] = pointgroups
     end
@@ -109,6 +157,29 @@ end
 
 hook.Add("InitPostEntity", "inithuyOwOs", function()
     zb.GetAllPoints(true)
+end)
+
+local function rewriteCachedMapPoints()
+    if not zb.CreateMapDir() then return end
+
+    for pointGroup, data in pairs(zb.Points or {}) do
+        local points = istable(data) and data.Points or nil
+        if points ~= nil then
+            zb.SaveMapPoints(pointGroup, points)
+        end
+    end
+end
+
+hook.Add("ZB_PreRoundStart", "zb_rewrite_mappoints", function()
+    timer.Simple(0, rewriteCachedMapPoints)
+end)
+
+hook.Add("PostCleanupMap", "zb_rewrite_mappoints_after_cleanup", function()
+    timer.Simple(0, rewriteCachedMapPoints)
+end)
+
+hook.Add("ShutDown", "zb_save_mappoints_on_shutdown", function()
+    rewriteCachedMapPoints()
 end)
 
 //zb.GetAllPoints()

@@ -515,6 +515,12 @@ end
 _G.ZC_ApplyManagedSpawn = ApplyManagedSpawn
 
 local initialized = false
+local function IsCoopRoundActiveSafe()
+    if not CurrentRound then return false end
+    local ok, round = pcall(CurrentRound)
+    return ok and istable(round) and round.name == "coop"
+end
+
 local function Initialize()
     if initialized then return end
     initialized = true
@@ -1456,6 +1462,7 @@ local function Initialize()
     hook.Add("PlayerInitialSpawn", "ZCity_CoopInitialSpawn", function(ply)
         timer.Simple(2, function()
             if not IsValid(ply) then return end
+            if not IsCoopRoundActiveSafe() then return end
             if ply:Team() == TEAM_SPECTATOR then return end
             if ply:Alive() then return end
             if not ZC_RespawnsEnabled then return end
@@ -1473,6 +1480,8 @@ local function Initialize()
     -- ── Death / wave queue ────────────────────────────────────────────────────────
 
     hook.Add("PlayerDeath", "ZCity_CoopRespawn", function(victim)
+        if not IsCoopRoundActiveSafe() then return end
+
         print("[ZC Respawn] PlayerDeath: " .. victim:Nick() ..
             " | Team="            .. tostring(victim:Team()) ..
             " | TEAM_SPECTATOR="  .. tostring(TEAM_SPECTATOR) ..
@@ -1525,13 +1534,27 @@ local function Initialize()
 
     -- ── PlayerSpawn cleanup ───────────────────────────────────────────────────────
 
+    local function ShouldSkipCoopRespawnSpawnHandling(ply)
+        return (tonumber(ply.ZC_CoopRespawnSkipSpawnUntil) or 0) > CurTime()
+    end
+
+    hook.Add("Fake Up", "ZCity_CoopRespawn_MarkUnragdoll", function(ply)
+        if not IsValid(ply) then return end
+        if not IsCoopRoundActiveSafe() then return end
+        ply.ZC_CoopRespawnSkipSpawnUntil = CurTime() + 1
+    end)
+
     hook.Add("PlayerSpawn", "ZCity_CoopRespawn_ReopenQueue", function(ply)
+        if not IsCoopRoundActiveSafe() then return end
         if not IsValid(ply) then return end
         if ply:Team() == TEAM_SPECTATOR then return end
+        if ShouldSkipCoopRespawnSpawnHandling(ply) then return end
 
         timer.Simple(0.1, function()
+            if not IsCoopRoundActiveSafe() then return end
             if not IsValid(ply) then return end
             if ply:Team() == TEAM_SPECTATOR then return end
+            if ShouldSkipCoopRespawnSpawnHandling(ply) then return end
             if not ply:Alive() then return end
             if ply.PlayerClassName ~= "Gordon" then return end
 
@@ -1544,6 +1567,11 @@ local function Initialize()
 
     hook.Add("PlayerSpawn", "ZCity_CoopRespawn_Cleanup", function(ply)
         local timerName = "ZC_RESPAWN_" .. ply:SteamID64()
+        local coopActive = IsCoopRoundActiveSafe()
+
+        if not coopActive and not timer.Exists(timerName) and not ply.ZCityRespawning and not ply.ZC_PendingWaveRetry then
+            return
+        end
 
         if ply:Team() == TEAM_SPECTATOR then
             if timer.Exists(timerName) then
@@ -1552,6 +1580,11 @@ local function Initialize()
                 ply.ZC_PendingWaveRetry = nil
                 SendRespawnTimer(ply, -1)
             end
+            return
+        end
+
+        if ShouldSkipCoopRespawnSpawnHandling(ply) then
+            print("[ZC Respawn] PlayerSpawn cleanup SKIPPED for " .. ply:Nick() .. " (FakeUp/unragdoll)")
             return
         end
 

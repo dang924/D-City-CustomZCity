@@ -30,6 +30,7 @@ return {
     "autorun_client_cl_dod_mode",
     "autorun_client_cl_elite_radar",
     "autorun_client_cl_event_menu",
+    "autorun_client_cl_event_joinspawn",
     "autorun_client_cl_event_protogen_visibility",
     "autorun_client_cl_free_attachments",
     "autorun_client_cl_gordon_helmet_nil_guard",

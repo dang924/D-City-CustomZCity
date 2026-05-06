@@ -230,7 +230,7 @@ function MODE:BuildHiddenWeaponPool(slotName)
         end
 
         local stats = self:GetHiddenWeaponStats(storedWeapon)
-        local score = self:CalculateHiddenWeaponScore(storedWeapon)
+        local score = self:CalculateHiddenWeaponScore(storedWeapon, className)
 
         entries[#entries + 1] = {
             class = className,
@@ -355,6 +355,11 @@ function MODE:GetHiddenLoadoutCatalog()
     return catalog
 end
 
+function MODE:InvalidateHiddenLoadoutCatalog()
+    hiddenCatalogCache = nil
+    hiddenCatalogCacheTime = 0
+end
+
 function MODE:CalculateHiddenLoadoutCost(loadout, catalog)
     catalog = catalog or self:GetHiddenLoadoutCatalog()
     loadout = self:NormalizeHiddenLoadout(loadout)
@@ -365,6 +370,20 @@ function MODE:CalculateHiddenLoadoutCost(loadout, catalog)
 
     for _, slotName in ipairs(self:GetHiddenLoadoutSlots()) do
         totalCost = totalCost + ((catalog.scoreMaps.armor[slotName] and catalog.scoreMaps.armor[slotName][loadout.armor[slotName]]) or 0)
+    end
+
+    -- Attachment scores (admin-overridable; default 0 preserves legacy free-attachment behavior).
+    if self.CalculateHiddenAttachmentScore and istable(loadout.attachments) then
+        for _, weaponSlot in ipairs({"primary", "secondary"}) do
+            local slotAttachments = loadout.attachments[weaponSlot]
+            if istable(slotAttachments) then
+                for _, attKey in pairs(slotAttachments) do
+                    if isstring(attKey) and attKey ~= "" then
+                        totalCost = totalCost + (self:CalculateHiddenAttachmentScore(attKey) or 0)
+                    end
+                end
+            end
+        end
     end
 
     return totalCost
@@ -666,6 +685,174 @@ function MODE:GiveHiddenSupportItems(ply)
     return selectedWeapon
 end
 
+local function hiddenNotify617(mode, message)
+    if not mode or not isstring(message) or message == "" then
+        return
+    end
+
+    for _, ply in player.Iterator() do
+        if not IsValid(ply) then continue end
+        if ply:Team() != 0 then continue end
+
+        ply:ChatPrint(message)
+    end
+end
+
+local function hiddenWeaponIsMotionDetector(weaponEntity)
+    if not IsValid(weaponEntity) then
+        return false
+    end
+
+    local className = string.lower(tostring(weaponEntity.GetClass and weaponEntity:GetClass() or ""))
+    if className == "weapon_hg_motiontracker" then
+        return true
+    end
+
+    if string.find(className, "motion", 1, true) and string.find(className, "tracker", 1, true) then
+        return true
+    end
+
+    local printName = string.lower(tostring(weaponEntity.PrintName or ""))
+    if string.find(printName, "motion detector", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+local function hiddenAttachmentIsThermal(attKey)
+    local normalized = string.lower(string.Trim(tostring(attKey or "")))
+    if normalized == "" then
+        return false
+    end
+
+    if normalized == "optic14" or normalized == "optic15" then
+        return true
+    end
+
+    if string.find(normalized, "thermal", 1, true) then
+        return true
+    end
+
+    local attachmentTable = hg and hg.attachments or nil
+    if not istable(attachmentTable) then
+        return false
+    end
+
+    for _, placementTable in pairs(attachmentTable) do
+        if not istable(placementTable) then continue end
+
+        local entry = placementTable[normalized]
+        if not istable(entry) then continue end
+
+        if entry.Thermal == true or entry.thermal == true then
+            return true
+        end
+
+        local printName = string.lower(tostring(entry.PrintName or entry.AbbrevName or ""))
+        if string.find(printName, "thermal", 1, true) then
+            return true
+        end
+
+        local description = string.lower(tostring(entry.Description or ""))
+        if string.find(description, "thermal", 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function hiddenWeaponHasThermalAttachment(weaponEntity)
+    if not IsValid(weaponEntity) then
+        return false
+    end
+
+    local attachments = weaponEntity.attachments
+    if not istable(attachments) then
+        return false
+    end
+
+    for _, slotData in pairs(attachments) do
+        if not istable(slotData) then continue end
+
+        local attKey = slotData[1]
+        if hiddenAttachmentIsThermal(attKey) then
+            return true
+        end
+    end
+
+    return false
+end
+
+function MODE:CheckHidden617LoadoutWarnings(ply, loadout, primaryWeapon, secondaryWeapon, supportWeapon)
+    if not IsValid(ply) or ply:Team() != 1 then
+        return
+    end
+
+    local hasMotionDetector = false
+    local hasThermalSight = false
+
+    local primaryClass = string.lower(tostring(loadout and loadout.primary or ""))
+    local secondaryClass = string.lower(tostring(loadout and loadout.secondary or ""))
+
+    if primaryClass == "weapon_hg_motiontracker" or secondaryClass == "weapon_hg_motiontracker" then
+        hasMotionDetector = true
+    end
+
+    if not hasMotionDetector then
+        hasMotionDetector = hiddenWeaponIsMotionDetector(primaryWeapon)
+            or hiddenWeaponIsMotionDetector(secondaryWeapon)
+            or hiddenWeaponIsMotionDetector(supportWeapon)
+    end
+
+    if not hasMotionDetector then
+        for _, weaponEntity in ipairs(ply:GetWeapons() or {}) do
+            if hiddenWeaponIsMotionDetector(weaponEntity) then
+                hasMotionDetector = true
+                break
+            end
+        end
+    end
+
+    local attachments = loadout and loadout.attachments or nil
+    if istable(attachments) then
+        for _, weaponSlot in ipairs({"primary", "secondary"}) do
+            local selectedAttachments = attachments[weaponSlot]
+            if not istable(selectedAttachments) then continue end
+
+            for _, attKey in pairs(selectedAttachments) do
+                if hiddenAttachmentIsThermal(attKey) then
+                    hasThermalSight = true
+                    break
+                end
+            end
+
+            if hasThermalSight then break end
+        end
+    end
+
+    if not hasThermalSight then
+        hasThermalSight = hiddenWeaponHasThermalAttachment(primaryWeapon)
+            or hiddenWeaponHasThermalAttachment(secondaryWeapon)
+            or hiddenWeaponHasThermalAttachment(supportWeapon)
+    end
+
+    if not hasThermalSight and tonumber(ply:GetNWInt("thermal_equipped", 0)) ~= 0 then
+        hasThermalSight = true
+    end
+
+    if hasMotionDetector and not self.Hidden617WarnedMotion then
+        self.Hidden617WarnedMotion = true
+        hiddenNotify617(self, "[HIDDEN] Warning: IRIS spawned with a motion detector.")
+    end
+
+    if hasThermalSight and not self.Hidden617WarnedThermal then
+        self.Hidden617WarnedThermal = true
+        hiddenNotify617(self, "[HIDDEN] Warning: IRIS spawned with a thermal sight.")
+    end
+end
+
 function MODE:GiveAmmoForWeapon(ply, weaponEntity, multiplier)
     if not IsValid(ply) or not IsValid(weaponEntity) then
         return
@@ -680,9 +867,89 @@ function MODE:GiveAmmoForWeapon(ply, weaponEntity, multiplier)
     ply:GiveAmmo(maxClip * math.max(multiplier or 0, 0), ammoType, true)
 end
 
+function MODE:ResetHiddenWeaponAttachments(weaponEntity)
+    if not IsValid(weaponEntity) then
+        return
+    end
+
+    if isfunction(weaponEntity.ClearAttachments) then
+        pcall(function()
+            weaponEntity:ClearAttachments()
+        end)
+    end
+
+    weaponEntity.attachments = istable(weaponEntity.attachments) and weaponEntity.attachments or {}
+
+    for _, placement in ipairs(self:GetHiddenLoadoutAttachmentSlots()) do
+        local placementOptions = istable(weaponEntity.availableAttachments) and weaponEntity.availableAttachments[placement] or nil
+        if not istable(placementOptions) then
+            weaponEntity.attachments[placement] = istable(weaponEntity.attachments[placement]) and weaponEntity.attachments[placement] or {}
+            continue
+        end
+
+        if placementOptions.cannotremove then
+            weaponEntity.attachments[placement] = istable(weaponEntity.attachments[placement]) and weaponEntity.attachments[placement] or {}
+            continue
+        end
+
+        local emptyOption = nil
+        for _, option in pairs(placementOptions) do
+            if istable(option) and self:NormalizeHiddenAttachmentKey(option[1]) == "" then
+                emptyOption = table.Copy(option)
+                break
+            end
+        end
+
+        weaponEntity.attachments[placement] = emptyOption or {"empty", {}}
+    end
+
+    if isfunction(weaponEntity.SyncAtts) then
+        weaponEntity:SyncAtts()
+    end
+end
+
+function MODE:ApplyHiddenWeaponAttachmentSelection(ply, weaponEntity, attachmentSelection)
+    if not IsValid(ply) or not IsValid(weaponEntity) then
+        return
+    end
+
+    if not hg or not isfunction(hg.AddAttachmentForce) or not istable(weaponEntity.availableAttachments) then
+        return
+    end
+
+    local className = weaponEntity.GetClass and weaponEntity:GetClass() or ""
+    local normalized = self:NormalizeHiddenWeaponAttachments(className, attachmentSelection)
+
+    self:ResetHiddenWeaponAttachments(weaponEntity)
+
+    for _, placement in ipairs(self:GetHiddenLoadoutAttachmentSlots()) do
+        local attKey = self:NormalizeHiddenAttachmentKey(normalized[placement])
+        if attKey ~= "" then
+            hg.AddAttachmentForce(ply, weaponEntity, attKey)
+        end
+    end
+
+    timer.Simple(0, function()
+        if IsValid(weaponEntity) and isfunction(weaponEntity.SyncAtts) then
+            weaponEntity:SyncAtts()
+        end
+    end)
+end
+
 function MODE:ApplyHiddenCombatEquipment(ply)
     if not IsValid(ply) or not ply:Alive() or ply:Team() == TEAM_SPECTATOR then
         return
+    end
+
+    -- Defensive: if the player is still in spectator/no-movetype state from the
+    -- prep phase when equipment is being applied, several SWEP bases (notably
+    -- ARCCW) crash the engine on Initialize. Force them back to a real movetype
+    -- before stripping/giving anything.
+    if ply:GetObserverMode() ~= OBS_MODE_NONE then
+        pcall(function() ply:UnSpectate() end)
+    end
+    if ply:GetMoveType() == MOVETYPE_NONE then
+        pcall(function() ply:SetMoveType(MOVETYPE_WALK) end)
     end
 
     ply:StripWeapons()
@@ -710,38 +977,49 @@ function MODE:ApplyHiddenCombatEquipment(ply)
             selectedWeapon = melee
         end
     elseif ply:Team() == 1 then
+        local isVip = self.HiddenVipSteamID64 and ply:SteamID64() == self.HiddenVipSteamID64
+
         self:EnsureHiddenSling(ply)
         self:ClearHiddenArmor(ply)
 
-        local loadout = self:GetPlayerHiddenLoadout(ply)
+        if isVip then
+            -- VIP stays intentionally unarmed (hands only).
+            selectedWeapon = hands
+        else
+            local loadout = self:GetPlayerHiddenLoadout(ply)
 
-        local primary = loadout.primary ~= "" and ply:Give(loadout.primary) or nil
-        if IsValid(primary) then
-            self:GiveAmmoForWeapon(ply, primary, self.HiddenConfig.PrimaryAmmoMultiplier or 3)
-            selectedWeapon = primary
-        end
-
-        local secondary = loadout.secondary ~= "" and ply:Give(loadout.secondary) or nil
-        if IsValid(secondary) and not IsValid(selectedWeapon) then
-            selectedWeapon = secondary
-        end
-
-        if IsValid(secondary) then
-            self:GiveAmmoForWeapon(ply, secondary, self.HiddenConfig.SecondaryAmmoMultiplier or 2)
-        end
-
-        local supportWeapon = self:GiveHiddenSupportItems(ply)
-        if not IsValid(selectedWeapon) and IsValid(supportWeapon) then
-            selectedWeapon = supportWeapon
-        end
-
-        for _, slotName in ipairs(self:GetHiddenLoadoutSlots()) do
-            local armorKey = loadout.armor[slotName]
-            if isstring(armorKey) and armorKey ~= "" then
-                pcall(function()
-                    hg.AddArmor(ply, armorKey)
-                end)
+            local primary = loadout.primary ~= "" and ply:Give(loadout.primary) or nil
+            if IsValid(primary) then
+                self:GiveAmmoForWeapon(ply, primary, self.HiddenConfig.PrimaryAmmoMultiplier or 3)
+                self:ApplyHiddenWeaponAttachmentSelection(ply, primary, loadout.attachments and loadout.attachments.primary or nil)
+                selectedWeapon = primary
             end
+
+            local secondary = loadout.secondary ~= "" and ply:Give(loadout.secondary) or nil
+            if IsValid(secondary) and not IsValid(selectedWeapon) then
+                selectedWeapon = secondary
+            end
+
+            if IsValid(secondary) then
+                self:GiveAmmoForWeapon(ply, secondary, self.HiddenConfig.SecondaryAmmoMultiplier or 2)
+                self:ApplyHiddenWeaponAttachmentSelection(ply, secondary, loadout.attachments and loadout.attachments.secondary or nil)
+            end
+
+            local supportWeapon = self:GiveHiddenSupportItems(ply)
+            if not IsValid(selectedWeapon) and IsValid(supportWeapon) then
+                selectedWeapon = supportWeapon
+            end
+
+            for _, slotName in ipairs(self:GetHiddenLoadoutSlots()) do
+                local armorKey = loadout.armor[slotName]
+                if isstring(armorKey) and armorKey ~= "" then
+                    pcall(function()
+                        hg.AddArmor(ply, armorKey)
+                    end)
+                end
+            end
+
+            self:CheckHidden617LoadoutWarnings(ply, loadout, primary, secondary, supportWeapon)
         end
     end
 

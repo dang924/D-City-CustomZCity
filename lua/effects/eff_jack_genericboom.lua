@@ -1,4 +1,4 @@
-﻿local ShockWave = Material("sprites/mat_jack_shockwave_white")
+local ShockWave = Material("sprites/mat_jack_shockwave_white")
 local Refract = Material("sprites/mat_jack_shockwave")
 local Wake = Material("effects/splashwake1")
 local Shit = Material("sprites/mat_jack_ignorezsprite")

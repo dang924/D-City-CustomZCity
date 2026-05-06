@@ -6,6 +6,13 @@ if not ZC_IsPatchRebelPlayer then
 end
 
 local initialized = false
+
+local function IsCoopRoundActive()
+    if not CurrentRound then return false end
+    local ok, round = pcall(CurrentRound)
+    return ok and istable(round) and round.name == "coop"
+end
+
 local function Initialize()
     if initialized then return end
     initialized = true
@@ -17,7 +24,7 @@ local function Initialize()
         if ply:Team() == TEAM_SPECTATOR then return end
         if ply.ZCityRespawning then return end
 
-        if not CurrentRound or CurrentRound().name ~= "coop" then return end
+        if not IsCoopRoundActive() then return end
 
         if hg and hg.MapCompleted then
             ply:ChatPrint("[ZCity] Cannot join — the map has already been completed.")
@@ -42,6 +49,11 @@ local function Initialize()
         if cmd ~= "!stuck" and cmd ~= "/stuck" then return end
         txtTbl[1] = ""
 
+        if not IsCoopRoundActive() then
+            ply:ChatPrint("[ZCity] /stuck is only available during coop rounds.")
+            return ""
+        end
+
         if not ZC_IsPatchRebelPlayer(ply) then
             ply:ChatPrint("[ZCity] This class cannot use /stuck.")
             return ""
@@ -64,6 +76,8 @@ local function Initialize()
     hook.Add("HG_PlayerSay", "ZCity_CoopJoinSpawn", function(ply, txtTbl, text)
         local cmd = string.lower(string.Trim(text))
         if cmd ~= "!join" and cmd ~= "/join" then return end
+        if not IsCoopRoundActive() then return end
+
         txtTbl[1] = ""
         if ply:Alive() then
             ply:ChatPrint("[ZCity] You are already in the game.")
@@ -71,10 +85,6 @@ local function Initialize()
         end
         if ply.ZCityRespawning then
             ply:ChatPrint("[ZCity] You are already queued to respawn.")
-            return ""
-        end
-        if not CurrentRound or CurrentRound().name ~= "coop" then
-            ply:ChatPrint("[ZCity] Join is only available during a coop round.")
             return ""
         end
         if not ZC_RespawnsEnabled then
@@ -102,15 +112,7 @@ local function Initialize()
     end)
 end
 
-local function IsCoopRoundActive()
-    if not CurrentRound then return false end
-
-    local round = CurrentRound()
-    return istable(round) and round.name == "coop"
-end
-
 hook.Add("InitPostEntity", "ZC_CoopInit_svcoopjoinspawn", function()
-    if not IsCoopRoundActive() then return end
     Initialize()
 end)
 
@@ -119,6 +121,5 @@ hook.Add("Think", "ZC_CoopInit_svcoopjoinspawn_Late", function()
         hook.Remove("Think", "ZC_CoopInit_svcoopjoinspawn_Late")
         return
     end
-    if not IsCoopRoundActive() then return end
     Initialize()
 end)

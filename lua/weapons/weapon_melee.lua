@@ -1,4 +1,4 @@
-﻿if SERVER then AddCSLuaFile() end
+if SERVER then AddCSLuaFile() end
 SWEP.PrintName = "Combat Knife"
 SWEP.Instructions = "A military grade combat knife designed to neutralize the enemy during combat operations and special operations."
 SWEP.Category = "Weapons - Melee"

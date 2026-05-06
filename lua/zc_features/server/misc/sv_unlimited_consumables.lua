@@ -5,6 +5,7 @@
 
 if CLIENT then return end
 
+local IsCoopRoundActive
 local initialized = false
 local function Initialize()
     if initialized then return end
@@ -26,6 +27,7 @@ local function Initialize()
 
     -- Give all unlimited consumables to a player if they don't already have them
     local function GiveConsumables(ply)
+        if not IsCoopRoundActive() then return end
         if not IsValid(ply) then return end
         if not ply:Alive() then return end
         if EXEMPT_CLASSES[ply.PlayerClassName] then return end
@@ -48,6 +50,7 @@ local function Initialize()
     -- Small defer so GiveEquipment's own timer.Simple(0) calls finish first.
     hook.Add("Player Spawn", "ZC_UnlimitedConsumables_Give", function(ply)
         timer.Simple(0.2, function()
+            if not IsCoopRoundActive() then return end
             GiveConsumables(ply)
         end)
     end)
@@ -73,6 +76,8 @@ local function Initialize()
     -- Refill on Think the moment the weapon hits empty.
     -- This fires before the weapon's own depletion+remove check each tick.
     hook.Add("Think", "ZC_UnlimitedConsumables", function()
+        if not IsCoopRoundActive() then return end
+
         local now = CurTime()
         if now < nextRefillCheck then return end
         nextRefillCheck = now + REFILL_INTERVAL
@@ -102,7 +107,7 @@ local function Initialize()
     end)
 end
 
-local function IsCoopRoundActive()
+IsCoopRoundActive = function()
     if not CurrentRound then return false end
 
     local round = CurrentRound()

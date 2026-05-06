@@ -84,7 +84,7 @@ if CLIENT then
 			self.worldModel = ClientsideModel(self.WorldModel)
 		end
 
-		if clawClasses[owner.PlayerClassName] and self.worldModel != "models/weapons/salat/anims/furry_fists.mdl" then
+		if IsValid(owner) and clawClasses[owner.PlayerClassName] and self.worldModel != "models/weapons/salat/anims/furry_fists.mdl" then
 			self.worldModel:SetModel("models/weapons/salat/anims/furry_fists.mdl")
 		end
 
@@ -98,7 +98,10 @@ if CLIENT then
 
 		if (IsValid(owner)) then
 			local ang = owner:EyeAngles()
-			local posa, aimvec = hg.eye(owner)--hg.eyeTrace(owner)
+			local posa = select(1, hg.eye(owner))--hg.eyeTrace(owner)
+			if not isvector(posa) then
+				posa = owner:EyePos()
+			end
 
 			local pos = posa + ang:Forward() * (-14) + ang:Up() * -9 * self.blockinganim
 

@@ -142,6 +142,8 @@ local function send_organism(org, ply)
 	sendtable.heartbeat = org.heartbeat
 	sendtable.timeValue = org.timeValue
 	sendtable.holdingbreath = org.holdingbreath
+	sendtable.zscav_lung_hold_current = org.zscav_lung_hold_current
+	sendtable.zscav_lung_hold_max = org.zscav_lung_hold_max
 	sendtable.arteria = org.arteria
 	sendtable.recoilmul = org.recoilmul
 	sendtable.meleespeed = org.meleespeed
@@ -205,6 +207,8 @@ local function send_bareinfo(org)
 	sendtable.timeValue = org.timeValue
 	sendtable.superfighter = org.superfighter
 	sendtable.lungsfunction = org.lungsfunction
+	sendtable.zscav_lung_hold_current = org.zscav_lung_hold_current
+	sendtable.zscav_lung_hold_max = org.zscav_lung_hold_max
 	sendtable.lleg = org.lleg
 	sendtable.rleg = org.rleg
 	sendtable.rarm = org.rarm

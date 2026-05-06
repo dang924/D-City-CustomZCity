@@ -164,6 +164,8 @@ local list = {
 	"COregen",
 	"LodgedEntities",
 	"holdingbreath",
+	{"zscav_lung_hold_current", 10},
+	{"zscav_lung_hold_max", 10},
 	{{"o2.regen", "o2", "regen"}, 2}, 
 	{{"o2.curregen", "o2", "curregen"}, 0.4},
 	0, 

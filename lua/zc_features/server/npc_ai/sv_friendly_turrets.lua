@@ -35,6 +35,8 @@ end)
 function Initialize()
     if initialized then return end
     initialized = true
+    local turretBulletFallback = {}
+
     local FRIENDLY_TURRET_NAMES = {
         ["ep2_outland_02"] = {
             ["turret_buddy_1"] = true,
@@ -111,6 +113,20 @@ function Initialize()
         end
     end
 
+    local function IsPlayerBulletDamageToTurret(turret, dmgInfo)
+        if not IsValid(turret) or turret:GetClass() ~= "npc_turret_floor" then return false end
+        if not dmgInfo then return false end
+
+        local attacker = dmgInfo:GetAttacker()
+        if not IsValid(attacker) or not attacker:IsPlayer() then return false end
+        if turret:Disposition(attacker) ~= D_HT then return false end
+        if dmgInfo:GetDamage() <= 0 then return false end
+
+        return dmgInfo:IsBulletDamage()
+            or bit.band(dmgInfo:GetDamageType(), DMG_BULLET) == DMG_BULLET
+            or bit.band(dmgInfo:GetDamageType(), DMG_BUCKSHOT) == DMG_BUCKSHOT
+    end
+
     -- New turret spawned
     hook.Add("OnEntityCreated", "ZCity_FriendlyTurrets", function(ent)
         if ent:GetClass() ~= "npc_turret_floor" then return end
@@ -124,6 +140,60 @@ function Initialize()
         timer.Simple(1, function()
             if IsValid(ply) then ApplyAllTurrets() end
         end)
+    end)
+
+    -- Some floor turrets can end up ignoring player bullet damage in coop.
+    -- Capture pre/post damage and only apply a fallback health reduction when
+    -- the engine did not reduce HP at all.
+    hook.Add("EntityTakeDamage", "ZCity_FriendlyTurrets_PlayerBulletFallback_Pre", function(ent, dmgInfo)
+        if not IsCoopRoundActive() then return end
+        if not IsPlayerBulletDamageToTurret(ent, dmgInfo) then return end
+
+        turretBulletFallback[ent:EntIndex()] = {
+            healthBefore = ent:Health(),
+            damage = math.max(dmgInfo:GetDamage(), 1),
+            attacker = dmgInfo:GetAttacker(),
+        }
+    end)
+
+    hook.Add("PostEntityTakeDamage", "ZCity_FriendlyTurrets_PlayerBulletFallback_Post", function(ent, dmgInfo)
+        if not IsCoopRoundActive() then return end
+        if not IsPlayerBulletDamageToTurret(ent, dmgInfo) then return end
+
+        local idx = ent:EntIndex()
+        local state = turretBulletFallback[idx]
+        turretBulletFallback[idx] = nil
+        if not state then return end
+
+        if ent:Health() < state.healthBefore then return end
+
+        local maxHealth = ent:GetMaxHealth()
+        if maxHealth <= 0 then maxHealth = 100 end
+
+        local currentHealth = ent:Health()
+        if currentHealth <= 0 then currentHealth = maxHealth end
+
+        local newHealth = currentHealth - math.Clamp(state.damage, 1, maxHealth)
+        ent:SetHealth(newHealth)
+
+        if newHealth <= 0 then
+            ent:SetHealth(0)
+            ent:Fire("SelfDestruct")
+
+            local attacker = state.attacker
+            if IsValid(attacker) then
+                local phys = ent:GetPhysicsObject()
+                if IsValid(phys) then
+                    phys:EnableMotion(true)
+                    phys:ApplyForceCenter(attacker:GetForward() * 700)
+                end
+            end
+        end
+    end)
+
+    hook.Add("EntityRemoved", "ZCity_FriendlyTurrets_PlayerBulletFallback_Cleanup", function(ent)
+        if not IsValid(ent) then return end
+        turretBulletFallback[ent:EntIndex()] = nil
     end)
 
     -- Map load and round restart

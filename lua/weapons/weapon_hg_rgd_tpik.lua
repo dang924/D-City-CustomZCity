@@ -1,4 +1,4 @@
-﻿if SERVER then AddCSLuaFile() end
+if SERVER then AddCSLuaFile() end
 SWEP.Base = "weapon_hg_grenade_tpik"
 SWEP.PrintName = "RGD-5"
 SWEP.Instructions = 

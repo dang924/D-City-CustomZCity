@@ -48,6 +48,10 @@ net.Receive("hg_wep_tuner_apply", function(_, ply)
     ApplyAng3(wep, "AttachmentAng", cfg.AttachmentAng, -180, 180)
     ApplyVec3(wep, "LocalMuzzlePos", cfg.LocalMuzzlePos, -64, 64)
     ApplyAng3(wep, "LocalMuzzleAng", cfg.LocalMuzzleAng, -180, 180)
+    ApplyVec3(wep, "offsetVec", cfg.offsetVec, -24, 24)
+    ApplyAng3(wep, "offsetAng", cfg.offsetAng, -180, 180)
+    ApplyVec3(wep, "ofsV", cfg.ofsV, -24, 24)
+    ApplyAng3(wep, "ofsA", cfg.ofsA, -180, 180)
 
     if wep.TraceAngOffset ~= nil and istable(cfg.TraceAngOffset) then
         local tr = cfg.TraceAngOffset
@@ -83,4 +87,5 @@ net.Receive("hg_wep_tuner_apply", function(_, ply)
         wep.GarandEnableTraceOffset = v
         wep:SetNWBool("GarandEnableTraceOffset", v)
     end
+
 end)

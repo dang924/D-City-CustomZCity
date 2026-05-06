@@ -76,6 +76,14 @@ local tbl = {
 		["swimforward"] = {seq = "swimforward", playTime = 1},
 		["swimleft"] = {seq = "swimleft", playTime = 1},
 	},
+	["models/weapons/c_zfungesture.mdl"] = {
+		["thumbdown"] = {seq = "thumbdown", playTime = 2},
+		["peace"] = {seq = "peace", playTime = 2},
+		["jumbo"] = {seq = "jumbo", playTime = 2},
+		["hello"] = {seq = "hello", playTime = 2},
+		["joke"] = {seq = "joke", playTime = 2},
+		["rock"] = {seq = "rock", playTime = 2},
+	},
 	["models/zmanip/c_zmaniphandanims.mdl"] = {
 		["explosion"] = {seq = "shieldexplosion"},
 	},

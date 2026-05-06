@@ -9,7 +9,12 @@ local alpha = 0
 local targetName = ""
 local progress = 0
 
+local function IsZScavBackCarryDisabled()
+    return ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive()
+end
+
 local function CanBackCarryNow(ply)
+    if IsZScavBackCarryDisabled() then return false end
     if not IsValid(ply) or not ply:Alive() then return false end
     if ply:InVehicle() then return false end
     if IsValid(ply.FakeRagdoll) then return false end
@@ -114,7 +119,7 @@ end
 
 hook.Add("HUDPaint", "ZC_AmputeeBackCarryIndicator", function()
     local ply = LocalPlayer()
-    if not IsValid(ply) or not ply:Alive() then
+    if IsZScavBackCarryDisabled() or not IsValid(ply) or not ply:Alive() then
         alpha = 0
         progress = 0
         return

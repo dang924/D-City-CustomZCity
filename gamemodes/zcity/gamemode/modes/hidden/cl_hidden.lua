@@ -19,6 +19,17 @@ local hiddenReadyCount = 0
 local hiddenReadyTotal = 0
 local hiddenPrepState = false
 local hiddenPrepFallbackEndsAt = 0
+local hiddenExtractActive = false
+local hiddenExtractEligible = true
+local hiddenExtractPos = vector_origin
+local hiddenExtractRequired = 0
+local hiddenExtractCurrent = 0
+local hiddenExtractVipMode = false
+local hiddenExtractIntelRequired = false
+local hiddenExtractVipAtZone = false
+local hiddenExtractVipHasIntel = false
+local hiddenExtractPingPos = vector_origin
+local hiddenExtractPingUntil = 0
 
 local function getHiddenPrepDuration()
     return math.max(tonumber(MODE and MODE.HiddenConfig and MODE.HiddenConfig.PrepDuration) or 60, 1)
@@ -131,6 +142,26 @@ net.Receive("hidden_prep_state", function()
             zb.ROUND_TIME = combatDuration
         end
     end
+
+    hook.Run("HG_HiddenPrepStateChanged", hiddenPrepState, combatStart, combatDuration)
+end)
+
+net.Receive("hidden_extract_sync", function()
+    hiddenExtractActive = net.ReadBool()
+    hiddenExtractEligible = net.ReadBool()
+    hiddenExtractPos = net.ReadVector()
+    hiddenExtractRequired = net.ReadUInt(8)
+    hiddenExtractCurrent = net.ReadUInt(8)
+    hiddenExtractVipMode = net.ReadBool()
+    hiddenExtractIntelRequired = net.ReadBool()
+    hiddenExtractVipAtZone = net.ReadBool()
+    hiddenExtractVipHasIntel = net.ReadBool()
+end)
+
+net.Receive("hidden_extract_ping", function()
+    hiddenExtractPingPos = net.ReadVector()
+    hiddenExtractPingUntil = CurTime() + 10
+    surface.PlaySound("buttons/blip1.wav")
 end)
 
 local teams = {
@@ -350,6 +381,44 @@ function MODE:HUDPaint()
         drawHiddenStatusBar(sw * 0.35, sh * 0.175, sw * 0.30, 18, prepFraction, Color(245, 188, 72), prepLabel)
     end
 
+    if prepTime <= 0 and lply:Team() == 1 then
+        if hiddenExtractActive then
+            local distText = ""
+            if isvector(hiddenExtractPos) and hiddenExtractPos ~= vector_origin and IsValid(lply) and lply:Alive() then
+                local distMeters = math.floor((lply:GetPos():Distance(hiddenExtractPos)) / 52.4934)
+                distText = " | " .. distMeters .. "m"
+            end
+
+            if hiddenExtractVipMode then
+                local vipStatus = hiddenExtractVipAtZone and "VIP IN EXTRACTION" or "VIP NOT IN EXTRACTION"
+                draw.SimpleText(vipStatus .. distText, "ZB_HomicideMedium", sw * 0.5, sh * 0.23, Color(245, 188, 72), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+
+                if hiddenExtractIntelRequired then
+                    local intelStatus = hiddenExtractVipHasIntel and "Intel secured" or "VIP must carry intel briefcase"
+                    draw.SimpleText(intelStatus, "ZB_HomicideMedium", sw * 0.5, sh * 0.26, Color(235, 235, 235), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                else
+                    draw.SimpleText("IRIS VIP must reach extraction zone.", "ZB_HomicideMedium", sw * 0.5, sh * 0.26, Color(235, 235, 235), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                end
+            else
+                local extractText = string.format("EXTRACT %d / %d%s", hiddenExtractCurrent, hiddenExtractRequired, distText)
+                draw.SimpleText(extractText, "ZB_HomicideMedium", sw * 0.5, sh * 0.23, Color(245, 188, 72), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                draw.SimpleText("Majority of living IRIS must be inside extraction zone.", "ZB_HomicideMedium", sw * 0.5, sh * 0.26, Color(235, 235, 235), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            end
+        elseif not hiddenExtractEligible then
+            draw.SimpleText("EXTRACTION UNAVAILABLE", "ZB_HomicideMedium", sw * 0.5, sh * 0.23, Color(220, 90, 90), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText("Kill Subject 617 before timer runs out or IRIS loses.", "ZB_HomicideMedium", sw * 0.5, sh * 0.26, Color(220, 90, 90), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+    end
+
+    if hiddenExtractPingUntil > CurTime() and isvector(hiddenExtractPingPos) and hiddenExtractPingPos ~= vector_origin then
+        draw.SimpleText("EXTRACTION ZONE PINGED", "ZB_HomicideMedium", sw * 0.5, sh * 0.30, Color(245, 188, 72), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+
+        local screenPos = hiddenExtractPingPos:ToScreen()
+        if screenPos.visible then
+            draw.SimpleText("EXTRACT", "ZB_HomicideMedium", screenPos.x, screenPos.y - 18, Color(245, 188, 72), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+    end
+
     if isHiddenIrisPrepSpectator() then
         draw.SimpleText("IRIS prep phase", "ZB_HomicideMediumLarge", sw * 0.5, sh * 0.46, Color(235, 235, 235), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         draw.SimpleText("You are locked out until prep ends.", "ZB_HomicideMedium", sw * 0.5, sh * 0.52, Color(200, 200, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
@@ -406,5 +475,18 @@ hook.Add("Think", "HiddenRoundThemeCleanup", function()
     end
 
     stopHiddenRoundTheme()
+end)
+
+hook.Add("PostDrawTranslucentRenderables", "HiddenExtractPingBeacon", function(_, isSkybox)
+    if isSkybox then return end
+    if hiddenExtractPingUntil <= CurTime() then return end
+    if not isvector(hiddenExtractPingPos) or hiddenExtractPingPos == vector_origin then return end
+
+    local frac = math.Clamp((hiddenExtractPingUntil - CurTime()) / 10, 0, 1)
+    local alpha = math.floor(40 + 140 * frac)
+
+    render.SetColorMaterial()
+    render.DrawWireframeSphere(hiddenExtractPingPos + Vector(0, 0, 6), 95, 18, 18, Color(245, 188, 72, alpha), true)
+    render.DrawLine(hiddenExtractPingPos, hiddenExtractPingPos + Vector(0, 0, 200), Color(245, 188, 72, alpha), true)
 end)
 

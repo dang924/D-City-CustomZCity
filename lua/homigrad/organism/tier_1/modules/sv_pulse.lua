@@ -50,6 +50,14 @@ module[2] = function(owner, org, timeValue)
 	org.heartbeat = math.Approach(org.heartbeat, math.max(heartbeat - 10, runnin_or_exhausted and ((1 - math.min(1, org.stamina[1] / (org.stamina.max * 1))) * 110 + 90) or 60), !runnin_or_exhausted and timeValue * 2 or timeValue * 15)
 	
 	heartbeat = heartbeat + (owner.suiciding and 50 or 0)
+	local subject617Boost = 0
+	if (org.Subject617FearHeartbeatUntil or 0) > CurTime() then
+		subject617Boost = math.Clamp(org.Subject617FearHeartbeatBoost or 0, 0, 70)
+	elseif (org.Subject617FearHeartbeatBoost or 0) > 0 then
+		org.Subject617FearHeartbeatBoost = math.max((org.Subject617FearHeartbeatBoost or 0) - (timeValue * 20), 0)
+		subject617Boost = org.Subject617FearHeartbeatBoost
+	end
+	heartbeat = heartbeat + subject617Boost
 	heartbeat = heartbeat + 40 * math.max(0, org.fear)
 	heartbeat = heartbeat + math.Clamp(org.shock, 0, 40)
 	heartbeat = heartbeat + math.Clamp(org.pain, 40, 80) - 40

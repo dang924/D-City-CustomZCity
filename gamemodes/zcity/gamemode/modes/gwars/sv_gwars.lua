@@ -188,7 +188,7 @@ function MODE:RoundThink()
 
                 ply:SetPlayerClass("swat")
 				zb.GiveRole(ply, "SWAT", Color(0,0,122))
-				local gun = ply:Give("weapon_ar15")
+					local gun = ply:Give("weapon_m4a1")
                 ply:GiveAmmo(gun:GetMaxClip1() * 3, gun:GetPrimaryAmmoType(), true)
                 ply:Give("weapon_medkit_sh")
                 ply:Give("weapon_tourniquet")

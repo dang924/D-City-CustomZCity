@@ -30,6 +30,27 @@ end
 
 function ENT:TakeByPlayer(activator)
 	if activator:IsPlayer() then-- and not table.HasValue(activator.inventory.Attachments, self.name) then
+		if ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive() and ZSCAV.GrantAttachmentResource then
+			local helpers = ZSCAV.ServerHelpers or {}
+			local handleUnconfiguredPickup = helpers.HandleUnconfiguredPickup
+			if isfunction(handleUnconfiguredPickup) and handleUnconfiguredPickup(activator, self:GetClass(), false) then
+				return
+			end
+
+			local ok, reason = ZSCAV:GrantAttachmentResource(activator, self.name, {
+				allowDuplicate = true,
+			})
+			if not ok then
+				if reason == "space" or reason == "weight" then
+					activator:ChatPrint("No room for this attachment.")
+				end
+				return
+			end
+			self:EmitSound("physics/metal/weapon_impact_soft" .. math.random(3) .. ".wav", 65, math.random(90, 110), 1, CHAN_ITEM)
+			self:Remove()
+			return
+		end
+
 		activator.inventory = activator:GetNetVar("Inventory") or activator.inventory
 		activator.inventory.Attachments[#activator.inventory.Attachments + 1] = self.name
 		activator:SetNetVar("Inventory",activator.inventory)

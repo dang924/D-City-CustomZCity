@@ -409,6 +409,34 @@ hook.Add("Post Post Pre Post Processing", "organism-effects", function()
 	
 	--maybe 56, 30?
 	local normaldsp = hg_gopro:GetBool() and 55 or 0
+	local subject617FxUntil = lply:GetNWFloat("Subject617FearFXUntil", 0)
+	local subject617FxStrength = math.Clamp(lply:GetNWFloat("Subject617FearFXStrength", 0), 0, 1)
+	-- Coop/event safety: never apply Subject617 fear FX outside the Hidden round.
+	do
+		local round = isfunction(CurrentRound) and CurrentRound() or nil
+		if not (istable(round) and round.name == "hidden") then
+			subject617FxUntil = 0
+			subject617FxStrength = 0
+			lply.Subject617FearPanicLerp = 0
+			lply.Subject617FearDSPActive = false
+		end
+	end
+	local subject617FxDuration = 3
+	local subject617PanicTarget = 0
+	if subject617FxUntil > CurTime() then
+		subject617PanicTarget = subject617FxStrength * math.Clamp((subject617FxUntil - CurTime()) / subject617FxDuration, 0, 1)
+	end
+	lply.Subject617FearPanicLerp = Lerp(math.min(FrameTime() * (subject617PanicTarget > (lply.Subject617FearPanicLerp or 0) and 7 or 2.5), 1), lply.Subject617FearPanicLerp or 0, subject617PanicTarget)
+	local subject617Panic = lply.Subject617FearPanicLerp or 0
+	local subject617FearDSPActive = lply.Subject617FearDSPActive or false
+	if subject617FearDSPActive then
+		if subject617Panic < 0.14 then
+			subject617FearDSPActive = false
+		end
+	elseif subject617Panic > 0.24 then
+		subject617FearDSPActive = true
+	end
+	lply.Subject617FearDSPActive = subject617FearDSPActive
 	lply:SetDSP(normaldsp)
 
 	if otrub or ((fakeTimer and fakeTimer - 2 > CurTime()) and GetConVar("hg_deathfadeout"):GetBool()) then
@@ -430,11 +458,13 @@ hook.Add("Post Post Pre Post Processing", "organism-effects", function()
 		if ((disorientation and disorientation > 3) or (brain and brain > 0.2) or lply.PlayerClassName == "headcrabzombie" or lply:GetNetVar("headcrab")) and lply:Alive() then
 			lply:SetDSP(130)
 		else
-			lply:SetDSP((lply.suiciding and lply:Alive()) and 130 or normaldsp)
+			lply:SetDSP((((lply.suiciding and lply:Alive()) or (subject617FearDSPActive and lply:Alive())) and 130) or normaldsp)
 		end
 	end
 
 	if not alive then
+		lply.Subject617FearPanicLerp = 0
+		lply.Subject617FearDSPActive = false
 		return false
 	end
 	
@@ -453,7 +483,7 @@ hook.Add("Post Post Pre Post Processing", "organism-effects", function()
 
 	local amount = 1 - math.Clamp(lowpulse + disorientation / 4 + k2 * 2,0,1)
 
-	disorientationLerp = LerpFT(disorientation > disorientationLerp and 1 or 0.01, disorientationLerp, math.max(lply.suiciding and 1.5 or 0, disorientation))
+	disorientationLerp = LerpFT(disorientation > disorientationLerp and 1 or 0.01, disorientationLerp, math.max(lply.suiciding and 1.5 or 0, subject617Panic * 1.2, disorientation))
 
 	if (disorientationLerp > 1) and lply:Alive() or brain > 0 then
 		local add2 = disorientationLerp - 1
@@ -725,7 +755,7 @@ hook.Add("Player-Ragdoll think", "organism-think-client-blood", function(ply, en
 			vecTorso[2] = amt * 2
 			vecTorso[3] = 0
 			
-			if sin < 0.1 and org.analgesia <= 1.5 and not org.breathed then
+			if sin < 0.1 and org.analgesia <= 3.0 and not org.breathed then
 				org.lastbreathed = CurTime()
 				org.breathed = true
 				local heartbeat = org.heartbeat or 0
@@ -818,7 +848,7 @@ hook.Add("Player-Ragdoll think", "organism-think-client-blood", function(ply, en
 		local heartbeat = org.heartbeat or 0
 		ent.pulse_breathe.lastbreathe = CurTime() + (1 / math.Clamp(org.heartbeat + (org.o2[1] - 30) * 1, 1, 120)) * 90 + ( org.o2[1] < 20 and 5 or 0)
 		
-		if org.analgesia <= 1.5 and org.heartbeat > 1 then
+		if org.analgesia <= 3.0 and org.heartbeat > 1 then
 			if (ent:WaterLevel() < 3) then
 				local muffed
 
@@ -865,6 +895,7 @@ hook.Add("Player-Ragdoll think", "organism-think-client-blood", function(ply, en
 		if (owner:IsPlayer() and owner:Alive()) or not owner:IsPlayer() then
 			for i, wound in pairs(wounds) do
 				local size = math.random(0, 1) * math.max(math.min(wound[1], 1), 0.5)
+				wound[5] = tonumber(wound[5]) or time
 				
 				if wound[5] + beatsPerSecond < time then
 					if seen and ent:LookupBone(wound[4]) then
@@ -908,6 +939,7 @@ hook.Add("Player-Ragdoll think", "organism-think-client-blood", function(ply, en
 	
 	if org and org.blood and org.blood > 10 and arterialwounds and #arterialwounds > 0 then
 		for i, wound in pairs(arterialwounds) do
+			wound[5] = tonumber(wound[5]) or time
 			local addtime = seen and 1 / math.Clamp(org.pulse or 70, 1,15) * 0.25 or 0.06
 			if wound[5] + addtime < time and ent:LookupBone(wound[4]) then
 				local pos, ang = ent:GetBonePosition(ent:LookupBone(wound[4]))

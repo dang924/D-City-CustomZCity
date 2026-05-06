@@ -19,6 +19,14 @@ zb.Points.HDN_IRIS = zb.Points.HDN_IRIS or {}
 zb.Points.HDN_IRIS.Color = Color(25, 110, 210)
 zb.Points.HDN_IRIS.Name = "HDN_IRIS"
 
+zb.Points.HDN_EXTRACT = zb.Points.HDN_EXTRACT or {}
+zb.Points.HDN_EXTRACT.Color = Color(245, 188, 72)
+zb.Points.HDN_EXTRACT.Name = "HDN_EXTRACT"
+
+zb.Points.HDN_INTEL = zb.Points.HDN_INTEL or {}
+zb.Points.HDN_INTEL.Color = Color(190, 150, 60)
+zb.Points.HDN_INTEL.Name = "HDN_INTEL"
+
 MODE.name = "hidden"
 MODE.PrintName = "Hidden"
 
@@ -47,6 +55,8 @@ MODE.HiddenConfig = {
     IrisJumpPower = 200,
     HiddenGravity = 0.75,
     IrisGravity = 1,
+    ExtractRadius = 220,
+    IntelSpawnDelay = 60,
     LeapCooldown = 6,
     LeapForce = 925,
     LeapUpForce = 260,
@@ -58,12 +68,11 @@ MODE.HiddenConfig = {
 }
 
 MODE.ROUND_TIME = MODE.HiddenConfig.PrepDuration + MODE.HiddenConfig.CombatDuration
-MODE.start_time = MODE.HiddenConfig.PrepDuration
+MODE.start_time = 1
 
 function MODE:HG_MovementCalc_2(mul, ply, cmd, mv)
-    local prepDuration = self.HiddenConfig.PrepDuration or self.start_time
-
-    if (zb.ROUND_START or 0) + prepDuration > CurTime() and cmd then
+    local prepActive = self.IsHiddenPreparationPhase and self:IsHiddenPreparationPhase()
+    if prepActive and cmd then
         cmd:RemoveKey(IN_ATTACK)
         cmd:RemoveKey(IN_ATTACK2)
 
@@ -82,9 +91,8 @@ function MODE:HG_MovementCalc_2(mul, ply, cmd, mv)
 end
 
 function MODE:PlayerCanLegAttack()
-    local prepDuration = self.HiddenConfig.PrepDuration or self.start_time
-
-    if (zb.ROUND_START or 0) + prepDuration > CurTime() then
+    local prepActive = self.IsHiddenPreparationPhase and self:IsHiddenPreparationPhase()
+    if prepActive then
         return false
     end
 end

@@ -25,7 +25,7 @@ hook.Add("DatabaseConnected", "GuiltCreateData", function()
 end)
 
 hook.Add( "PlayerInitialSpawn","ZB_GuiltSQL", function( ply )
-    local name = ply:Name()
+    local name = ZC_GetSteamName and ZC_GetSteamName(ply) or ply:Name()
 	local steamID64 = ply:SteamID64()
 
     --if not zb.GuiltSQL.Active then
@@ -37,6 +37,8 @@ hook.Add( "PlayerInitialSpawn","ZB_GuiltSQL", function( ply )
 		query:Select("value")
 		query:Where("steamid", steamID64)
 		query:Callback(function(result)
+            if not IsValid(ply) then return end
+
 			if (IsValid(ply) and istable(result) and #result > 0 and result[1].value) then
 				local updateQuery = mysql:Update("zb_guilt")
 					updateQuery:Update("steam_name", name)
@@ -58,6 +60,7 @@ hook.Add( "PlayerInitialSpawn","ZB_GuiltSQL", function( ply )
                     ply:SetNetVar("Karma", ply.Karma)
 
                     timer.Simple(0, function()
+                        if not IsValid(ply) then return end
                         ply:Ban(5, false)
                         ply:Kick("Your karma is too low: " .. math.Round( karma, 0 ) .. ". Try again in 5 minutes." )
                     end)

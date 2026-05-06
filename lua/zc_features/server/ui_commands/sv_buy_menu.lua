@@ -157,7 +157,6 @@ local function Initialize()
         { label = "PM-9",            class = "weapon_pm9",            price = 120,  category = "Pistols" },
         { label = "Draco",           class = "weapon_draco",          price = 200,  category = "Pistols" },
         { label = "VSKA Draco",      class = "weapon_dracovska",      price = 210,  category = "Pistols" },
-        { label = "AR-15 Pistol",    class = "weapon_ar_pistol",      price = 220,  category = "Pistols" },
         { label = "Zoraki M906",     class = "weapon_zoraki",         price = 70,   category = "Pistols" },
         { label = "PB-4 Osa",        class = "weapon_osapb",          price = 100,  category = "Pistols" },
         -- WFA
@@ -177,7 +176,6 @@ local function Initialize()
         { label = "Scorpion vz. 61", class = "weapon_skorpion",       price = 220,  category = "SMGs" },
         { label = "KRISS Vector",    class = "weapon_vector",         price = 400,  category = "SMGs" },
         { label = "Steyr TMP",       class = "weapon_tmp",            price = 280,  category = "SMGs" },
-        { label = "Colt 9mm SMG",    class = "weapon_colt9mm",        price = 280,  category = "SMGs" },
         -- WFA
         { label = "MP5 SD",          class = "weapon_mp5sd",          price = 370,  category = "SMGs" },
         { label = "Walther MPL",     class = "weapon_mpl",            price = 260,  category = "SMGs" },
@@ -194,7 +192,6 @@ local function Initialize()
         { label = "AS Val",          class = "weapon_asval",          price = 550,  category = "Rifles" },
         { label = "ASH-12",          class = "weapon_ash12",          price = 600,  category = "Rifles" },
         { label = "M4A1",            class = "weapon_m4a1",           price = 530,  category = "Rifles" },
-        { label = "M16A2",           class = "weapon_m16a2",          price = 500,  category = "Rifles" },
         { label = "HK416",           class = "weapon_hk416",          price = 560,  category = "Rifles" },
         { label = "SG 552 Commando", class = "weapon_sg552",          price = 540,  category = "Rifles" },
         { label = "O.S.I.P.R.",      class = "weapon_osipr",          price = 600,  category = "Rifles" },
@@ -218,7 +215,6 @@ local function Initialize()
 
         -- ── CARBINES ─────────────────────────────────────────────────────────────
         -- ZCity native
-        { label = "AR-15",           class = "weapon_ar15",           price = 450,  category = "Carbines" },
         { label = "Mini-14",         class = "weapon_mini14",         price = 420,  category = "Carbines" },
         { label = "Ruger 10/22",     class = "weapon_ruger",          price = 320,  category = "Carbines" },
         { label = "VPO-136",         class = "weapon_vpo136",         price = 400,  category = "Carbines" },
@@ -1304,13 +1300,21 @@ local function Initialize()
     -- ── Attachment grant helper ──────────────────────────────────────────────────
 
     local function GrantAttachment(ply, attKey)
-        if not IsValid(ply) then return end
-        if not ply.inventory then return end
+        if not IsValid(ply) then return false, "invalid" end
+        if ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive() and ZSCAV.GrantAttachmentResource then
+            return ZSCAV:GrantAttachmentResource(ply, attKey, {
+                allowDuplicate = false,
+            })
+        end
+        if not ply.inventory then return false, "invalid" end
         ply.inventory.Attachments = ply.inventory.Attachments or {}
         if not table.HasValue(ply.inventory.Attachments, attKey) then
             ply.inventory.Attachments[#ply.inventory.Attachments + 1] = attKey
+            ply:SetNetVar("Inventory", ply.inventory)
+            return true, "legacy"
         end
         ply:SetNetVar("Inventory", ply.inventory)
+        return false, "duplicate"
     end
 
     local function WeaponHasAttachment(wep, attKey)
@@ -1380,9 +1384,20 @@ local function Initialize()
 
         -- Grant attachment, armor or weapon
         if item.attKey and item.attKey ~= "" then
-            GrantAttachment(ply, item.attKey)
-            ply:ChatPrint("[Shop] Attachment '" .. item.label .. "' unlocked — Balance: $" .. GetMoney(ply))
-            purchaseApplied = true
+            local granted, reason = GrantAttachment(ply, item.attKey)
+            if granted then
+                ply:ChatPrint("[Shop] Attachment '" .. item.label .. "' unlocked — Balance: $" .. GetMoney(ply))
+                purchaseApplied = true
+            else
+                SetMoney(ply, money)
+                if reason == "duplicate" then
+                    ply:ChatPrint("[Shop] You already have that attachment.")
+                elseif reason == "space" or reason == "weight" then
+                    ply:ChatPrint("[Shop] No room for that attachment in your inventory.")
+                else
+                    ply:ChatPrint("[Shop] Attachment grant failed. Purchase canceled.")
+                end
+            end
         elseif item.itemType == "armor" then
             local slot = item.armorSlot or "torso"
             local key = item.armorKey or item.class

@@ -1,0 +1,6 @@
+ENT.Base = "npc_vj_creature_base"
+ENT.Type = "ai"
+ENT.PrintName = "Infected (Female)"
+ENT.Author = "Darkborn"
+ENT.Contact = "http://steamcommunity.com/groups/vrejgaming"
+ENT.Category = "Left 4 Dead 2"

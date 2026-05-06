@@ -63,11 +63,12 @@ MODE.LootTable = {
 		{3,"weapon_bigbandage_sh"},
 		
         {2,"weapon_medkit_sh"},
+        {2,"weapon_afak_sh"},
 		{2,"weapon_bloodbag"},
 		
         {1,"weapon_mini14"},
         {1,"ent_ammo_5.56x45mm"},
-        {1,"weapon_m16a2"},
+        {1,"weapon_m4a1"},
     }},
 	
 	[2] = {1, {
@@ -85,6 +86,7 @@ MODE.LootTable = {
         {8,"weapon_bigconsumable"},
 		{7,"weapon_painkillers"},
 		{6,"weapon_bigbandage_sh"},
+        {4,"weapon_afak_sh"},
         {5,"weapon_morphine"},
         {5,"weapon_naloxone"},
         {4,"weapon_mannitol"},

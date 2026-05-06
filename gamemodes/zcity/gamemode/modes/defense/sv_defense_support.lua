@@ -262,7 +262,7 @@ local function SpawnSupportTeam(requester)
     
 
     local supportWeapons = {
-        "weapon_ar15",
+        "weapon_m4a1",
         "weapon_akm",
         "weapon_mp5",
         "weapon_m249"

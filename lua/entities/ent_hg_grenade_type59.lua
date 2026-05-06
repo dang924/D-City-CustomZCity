@@ -1,4 +1,4 @@
-﻿if SERVER then AddCSLuaFile() end
+if SERVER then AddCSLuaFile() end
 ENT.Base = "ent_hg_grenade"
 ENT.Spawnable = false
 ENT.Model = "models/weapons/w_jj_fraggrenade_thrown.mdl"

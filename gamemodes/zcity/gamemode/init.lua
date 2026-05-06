@@ -10,6 +10,94 @@ AddCSLuaFile("loader.lua")
 include("loader.lua")
 
 local PLAYER = FindMetaTable("Player")
+
+local MIN_EXTRA_MAGAZINES_ON_ACQUIRE = 3
+local MAX_RESERVE_AMMO_TOPUP = 120
+
+local DISALLOWED_TOPUP_AMMO = {
+	grenade = true,
+	rpg_round = true,
+	xbowbolt = true,
+	ar2altfire = true,
+	slam = true,
+	combine_mine = true,
+	alyxgun = true,
+}
+
+local function GetPrimaryAmmoName(wep, ammoType)
+	if not IsValid(wep) then return "" end
+
+	local ammoName = game.GetAmmoName(ammoType)
+	ammoName = isstring(ammoName) and ammoName or ""
+
+	if wep.Primary and isstring(wep.Primary.Ammo) and wep.Primary.Ammo ~= "" and wep.Primary.Ammo ~= "none" then
+		local declared = string.lower(wep.Primary.Ammo)
+		if ammoName ~= "" and string.lower(ammoName) ~= declared then
+			return ""
+		end
+		ammoName = wep.Primary.Ammo
+	end
+
+	return string.lower(ammoName or "")
+end
+
+local function ShouldTopUpAmmoForWeapon(wep, ammoType, maxClip1)
+	if not isnumber(maxClip1) or maxClip1 <= 1 then return false end
+	if not isnumber(ammoType) or ammoType < 0 then return false end
+
+	local ammoName = GetPrimaryAmmoName(wep, ammoType)
+	if ammoName == "" or ammoName == "none" then return false end
+	if DISALLOWED_TOPUP_AMMO[ammoName] then return false end
+
+	return true
+end
+
+local function ComputeReserveFloor(maxClip1, ammoType)
+	local minReserve = math.max(0, math.floor(maxClip1 * MIN_EXTRA_MAGAZINES_ON_ACQUIRE))
+
+	if game.GetAmmoData then
+		local ammoData = game.GetAmmoData(ammoType)
+		local maxCarry = ammoData and tonumber(ammoData.maxcarry) or nil
+		if maxCarry and maxCarry > 0 then
+			minReserve = math.min(minReserve, math.floor(maxCarry * 0.5))
+		end
+	end
+
+	minReserve = math.min(minReserve, MAX_RESERVE_AMMO_TOPUP)
+	return math.max(0, minReserve)
+end
+
+local function EnsureWeaponMinimumReserveAmmo(ply, wep)
+	if not IsValid(ply) or not ply:IsPlayer() then return end
+	if not IsValid(wep) then return end
+
+	local ownerKey = ply:SteamID64() or ("ent:" .. tostring(ply:EntIndex()))
+	if wep.ZC_MinReserveGrantedFor == ownerKey then return end
+	wep.ZC_MinReserveGrantedFor = ownerKey
+
+	timer.Simple(0, function()
+		if not IsValid(ply) or not IsValid(wep) then return end
+
+		local maxClip1 = wep:GetMaxClip1()
+		if not isnumber(maxClip1) or maxClip1 <= 0 then return end
+
+		local ammoType = wep:GetPrimaryAmmoType()
+		if not ShouldTopUpAmmoForWeapon(wep, ammoType, maxClip1) then return end
+
+		local minReserve = ComputeReserveFloor(maxClip1, ammoType)
+		if minReserve <= 0 then return end
+
+		local currentReserve = math.max(0, ply:GetAmmoCount(ammoType) or 0)
+		if currentReserve < minReserve then
+			ply:GiveAmmo(minReserve - currentReserve, ammoType, true)
+		end
+	end)
+end
+
+hook.Add("WeaponEquip", "ZC_EnsureMinimumAmmoOnAcquire", function(wep, ply)
+	EnsureWeaponMinimumReserveAmmo(ply, wep)
+end)
+
 function PLAYER:CanSpawn()
 	return ( CurrentRound and CurrentRound() and CurrentRound().CanSpawn and CurrentRound():CanSpawn(self)) or (zb.ROUND_STATE == 0)
 end
@@ -74,7 +162,11 @@ end)
 function zb:GetTeamSpawn(ply)
 	local team_ = ply:Team()
 
-	local team0spawns, team1spawns = CurrentRound():GetTeamSpawn()
+	local team0spawns, team1spawns
+	local mode = CurrentRound and CurrentRound()
+	if mode and isfunction(mode.GetTeamSpawn) then
+		team0spawns, team1spawns = mode:GetTeamSpawn()
+	end
 	
 	if !team0spawns or !next(team0spawns) then
 		team0spawns = {zb:GetRandomSpawn()}
@@ -179,18 +271,22 @@ end
 local function PlayerSelectSpawn(ply, transition)
 	if CurrentRound().randomSpawns then
 		local randSpawn = zb:GetRandomSpawn()
-		ply:SetPos(randSpawn)
+		if isvector(randSpawn) then
+			ply:SetPos(randSpawn)
+		end
 
 		return
 	end
 
 	local spawnPos = zb:GetTeamSpawn(ply)
 
-	if not spawnPos then
-		local randSpawn = zb:GetRandomSpawn()
-		ply:SetPos(randSpawn)
-	else
+	if isvector(spawnPos) then
 		ply:SetPos(spawnPos)
+	else
+		local randSpawn = zb:GetRandomSpawn()
+		if isvector(randSpawn) then
+			ply:SetPos(randSpawn)
+		end
 	end
 end
 
@@ -453,30 +549,31 @@ local maps = {}
 hook.Add("PostCleanupMap","changelevel_generate",function()
 	if CurrentRound().name != "coop" then return end
 	local player_pos = getspawnpos()
-    local dist = 0
-    local map
-    
-    local maps = {}
-    for i, map in pairs(ents.FindByClass("trigger_changelevel")) do
-        local min, max = map:WorldSpaceAABB()
-        local tdmlPos = max - ((max - min) / 2)
+	local dist = 0
+	local map
 
-        maps[map] = tdmlPos
-    end
-    
-    for ent, pos in pairs(maps) do
-		if ent.map == game.GetMap() then continue end
-        local dist2 = pos:Distance(player_pos)
-        --print(dist,dist2,ent.map,pos,player_pos)
-        if dist2 > dist then
-            dist = dist2
-            map = ent
-        end
-    end--выбираем самый дальний ченджлевел
+	for _, ent in pairs(ents.FindByClass("trigger_changelevel")) do
+		if not IsValid(ent) then continue end
 
-    if not IsValid(map) then map = select(2, table.Random(maps)) end
-    
-    print("Next map is: "..map.map)
+		local nextMapName = tostring(ent.map or "")
+		if nextMapName == "" or nextMapName == game.GetMap() then continue end
+
+		local min, max = ent:WorldSpaceAABB()
+		local tdmlPos = max - ((max - min) / 2)
+		local dist2 = tdmlPos:Distance(player_pos)
+
+		if dist2 > dist then
+			dist = dist2
+			map = ent
+		end
+	end--выбираем самый дальний ченджлевел
+
+	if not IsValid(map) then
+		print("[ZCity] changelevel_generate: no valid trigger_changelevel target found after cleanup.")
+		return
+	end
+
+	print("Next map is: "..tostring(map.map))
 
     local min, max = map:WorldSpaceAABB()
     local tdmlPos = max - ((max - min) / 2)

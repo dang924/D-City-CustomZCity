@@ -2,6 +2,8 @@ local max, min, Round, Lerp, halfValue2 = math.max, math.min, math.Round, Lerp, 
 --local Organism = hg.organism
 hg.organism.module.lungs = {}
 local module = hg.organism.module.lungs
+local ANALGESIA_HEAVY_EFFECT_THRESHOLD = 3.0
+local PAINKILLER_HEAVY_EFFECT_THRESHOLD = 4.8
 module[1] = function(org)
 	org.lungsL = {
 		0, --состояние,пневмотаракс
@@ -27,6 +29,8 @@ module[1] = function(org)
 	org.CO = 0
 	org.COregen = 0
 	org.lastCOBreathe = nil
+	org.zscav_lung_hold_current = 0
+	org.zscav_lung_hold_max = 0
 
 	org.mannitol = 0
 end
@@ -44,6 +48,8 @@ local function insta_send_holdingbreath(org)
 	
 	local tbl = {}
 	tbl.holdingbreath = org.holdingbreath
+	tbl.zscav_lung_hold_current = org.zscav_lung_hold_current
+	tbl.zscav_lung_hold_max = org.zscav_lung_hold_max
 	tbl.owner = org.owner
 
 	net.WriteTable(tbl)
@@ -52,6 +58,49 @@ local function insta_send_holdingbreath(org)
 	net.WriteBool(false)
 	net.WriteBool(true) // вот эта шняга отвечает за то чтобы оно просто мерджнуло и всё
 	net.Send(org.owner)
+end
+
+local ZSCAV_LUNG_HOLD_MAX = 10.0
+local ZSCAV_LUNG_HOLD_DRAIN = 1.0
+local ZSCAV_LUNG_HOLD_REGEN = 0.7
+local ZSCAV_LUNG_HOLD_START_MIN = 0.15
+
+local function is_zscav_lung_mode(owner)
+	return IsValid(owner)
+		and owner:IsPlayer()
+		and ZSCAV
+		and ZSCAV.IsActive
+		and ZSCAV:IsActive()
+end
+
+local function ensure_zscav_lung_state(org)
+	org.zscav_lung_hold_max = tonumber(org.zscav_lung_hold_max) or ZSCAV_LUNG_HOLD_MAX
+	if org.zscav_lung_hold_max <= 0 then
+		org.zscav_lung_hold_max = ZSCAV_LUNG_HOLD_MAX
+	end
+
+	org.zscav_lung_hold_current = math.Clamp(
+		tonumber(org.zscav_lung_hold_current) or org.zscav_lung_hold_max,
+		0,
+		org.zscav_lung_hold_max
+	)
+
+	return org.zscav_lung_hold_current, org.zscav_lung_hold_max
+end
+
+local function can_start_holdbreath(ply)
+	if not ply.organism then return false end
+	if not ply:Alive() then return false end
+	if ply.organism.o2.curregen == 0 then return false end
+
+	if is_zscav_lung_mode(ply) then
+		local current, maxValue = ensure_zscav_lung_state(ply.organism)
+		return current > (maxValue * ZSCAV_LUNG_HOLD_START_MIN)
+			and (ply.organism.o2[1] or 0) > 10
+			and ply.organism.lungsfunction ~= false
+	end
+
+	return ply.organism.stamina[1] >= 90
 end
 
 local function togglebreath(ply, toggle)
@@ -92,9 +141,14 @@ end
 
 concommand.Add("hmcd_holdbreath",function(ply)
 	if not ply.organism then return end
-	if not ply:Alive() then return end
-	if ply.organism.stamina[1] < 90 then return end
-	if ply.organism.o2.curregen == 0 then return end
+	if ply.organism.holdingbreath then
+		if (ply.cooldownbreathe or 0) > CurTime() then return end
+		ply.cooldownbreathe = CurTime() + 0.5
+		togglebreath(ply)
+		return
+	end
+
+	if not can_start_holdbreath(ply) then return end
 
 	if (ply.cooldownbreathe or 0) > CurTime() then return end
 	ply.cooldownbreathe = CurTime() + 0.5
@@ -103,10 +157,7 @@ concommand.Add("hmcd_holdbreath",function(ply)
 end)
 
 concommand.Add("+hmcd_holdbreath",function(ply)
-	if not ply.organism then return end
-	if not ply:Alive() then return end
-	if ply.organism.stamina[1] < 90 then return end
-	if ply.organism.o2.curregen == 0 then return end
+	if not can_start_holdbreath(ply) then return end
 
 	if (ply.cooldownbreathe or 0) > CurTime() then return end
 	ply.cooldownbreathe = CurTime() + 0.5
@@ -116,8 +167,10 @@ end)
 
 concommand.Add("-hmcd_holdbreath",function(ply)
 	if not ply.organism then return end
-	if ply.organism.stamina[1] < 90 then return end
-	if ply.organism.o2.curregen == 0 then return end
+	if not is_zscav_lung_mode(ply) then
+		if ply.organism.stamina[1] < 90 then return end
+		if ply.organism.o2.curregen == 0 then return end
+	end
 
 	if (ply.cooldownbreathe or 0) > CurTime() then ply.releasebreathe = ply.cooldownbreathe return end
 
@@ -165,7 +218,25 @@ local bit_band,util_PointContents = bit.band,util.PointContents
 local color_white, color_red, color_red2, color_red3 = Color(255, 255, 255), Color(255, 0, 0), Color(200, 55, 55), Color(255, 100, 100)
 module[2] = function(owner, org, timeValue)
 	local o2 = org.o2
-	local losing_oxy = timeValue * 1 * math.Clamp(org.o2[1] / 30, 0.25, 1)
+	local zscavLungMode = is_zscav_lung_mode(owner)
+	local zscavReserveActive = false
+
+	if zscavLungMode then
+		local currentHold, maxHold = ensure_zscav_lung_state(org)
+		if org.holdingbreath then
+			currentHold = max(currentHold - timeValue * ZSCAV_LUNG_HOLD_DRAIN, 0)
+			org.zscav_lung_hold_current = currentHold
+			zscavReserveActive = currentHold > 0
+		else
+			local regenMul = owner:Crouching() and 1.15 or 1
+			org.zscav_lung_hold_current = min(currentHold + timeValue * ZSCAV_LUNG_HOLD_REGEN * regenMul, maxHold)
+		end
+	else
+		org.zscav_lung_hold_current = 0
+		org.zscav_lung_hold_max = 0
+	end
+
+	local losing_oxy = (zscavReserveActive and org.holdingbreath) and 0 or timeValue * 1 * math.Clamp(org.o2[1] / 30, 0.25, 1)
 	org.losing_oxy = losing_oxy
 	o2[1] = max(o2[1] - losing_oxy, 0)
 	local ent = hg.GetCurrentCharacter(owner)
@@ -185,7 +256,7 @@ module[2] = function(owner, org, timeValue)
 
 	if org.holdingbreath then
 		//org.stamina[1] = max(org.stamina[1] - timeValue * 15,0)
-		if org.stamina[1] < 90 or org.o2[1] <= 10 then
+		if (zscavLungMode and org.o2[1] <= 10) or ((not zscavLungMode) and (org.stamina[1] < 90 or org.o2[1] <= 10)) then
 			togglebreath(owner, false)
 		end
 		
@@ -248,7 +319,7 @@ module[2] = function(owner, org, timeValue)
 		o2[1] = math.max(5, o2[1])
 	end
 	
-	if org.isPly and not org.otrub and o2.curregen < losing_oxy and org.analgesia <= 1.5 and !org.heartstop then
+	if org.isPly and not org.otrub and o2.curregen < losing_oxy and org.analgesia <= ANALGESIA_HEAVY_EFFECT_THRESHOLD and !org.heartstop then
 		if mask_blevota then
 			if o2[1] < 15 then
 				org.owner:Notify("DROP THE FUCKING MASK", 25, "take_gasmask2", 0, nil, color_red2)
@@ -270,12 +341,14 @@ module[2] = function(owner, org, timeValue)
 		end
 	end
 
-	if org.analgesia > 1.5 then
+	if org.analgesia > ANALGESIA_HEAVY_EFFECT_THRESHOLD then
 		org.owner:Notify(drugged[math.random(#drugged)], 30, "drugged", 0, nil, color_white)
 	end
 
-	if org.analgesia > 1.5 or org.painkiller > 2.4 then
-		if math.Rand(0, 500) < (org.analgesia + org.painkiller) then
+	if org.analgesia > ANALGESIA_HEAVY_EFFECT_THRESHOLD or org.painkiller > PAINKILLER_HEAVY_EFFECT_THRESHOLD then
+		if math.Rand(0, 500) < (
+			math.max(org.analgesia - ANALGESIA_HEAVY_EFFECT_THRESHOLD, 0)
+			+ math.max(org.painkiller - PAINKILLER_HEAVY_EFFECT_THRESHOLD, 0)) then
 			//org.lungsfunction = false
 		end
 	end

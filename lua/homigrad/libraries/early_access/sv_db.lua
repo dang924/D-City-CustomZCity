@@ -31,7 +31,7 @@ end
 
 hook.Add("PlayerInitialSpawn","AddInWL",function(ply)
     if STEAMIDs[ply:SteamID64()] then
-        local name = ply:Name()
+		local name = ZC_GetSteamName and ZC_GetSteamName(ply) or ply:Name()
 	    local steamID64 = ply:SteamID64()
 
         if not PLUGIN.Active then

@@ -115,6 +115,11 @@ local gradientUp = surface.GetTextureID("vgui/gradient-u")
 local gradientLeft = surface.GetTextureID("vgui/gradient-l")
 -- local gradientRadial = Material("helix/gui/radial-gradient.png")
 local defaultBackgroundColor = Color(30, 30, 30, 200)
+local dermaPanelColor = Color(16, 16, 20, 235)
+local dermaPanelAltColor = Color(24, 24, 30, 235)
+local dermaPanelHoverColor = Color(40, 40, 48, 255)
+local dermaPanelActiveColor = Color(58, 58, 70, 255)
+local dermaPanelOutlineColor = Color(120, 28, 28, 220)
 
 local SKIN = {}
 derma.DefineSkin("ZCity", "ZCity skin.", SKIN)
@@ -150,6 +155,80 @@ SKIN.Colours.Button.Down = Color(180, 180, 180)
 SKIN.Colours.Button.Disabled = Color(0, 0, 0, 100)
 
 SKIN.Colours.Label.Default = color_white
+SKIN.Colours.Label.Bright = color_white
+SKIN.Colours.Label.Dark = Color(215, 215, 215)
+SKIN.Colours.Label.Highlight = Color(255, 230, 230)
+
+SKIN.Colours.Tab.Active.Normal = color_white
+SKIN.Colours.Tab.Active.Hover = color_white
+SKIN.Colours.Tab.Active.Down = color_white
+SKIN.Colours.Tab.Active.Disabled = Color(255, 255, 255, 110)
+SKIN.Colours.Tab.Inactive.Normal = Color(210, 210, 210)
+SKIN.Colours.Tab.Inactive.Hover = color_white
+SKIN.Colours.Tab.Inactive.Down = color_white
+SKIN.Colours.Tab.Inactive.Disabled = Color(255, 255, 255, 90)
+
+SKIN.Colours.Tree.Lines = Color(90, 90, 100)
+SKIN.Colours.Tree.Normal = color_white
+SKIN.Colours.Tree.Hover = color_white
+SKIN.Colours.Tree.Selected = color_white
+
+SKIN.Colours.Properties.Line_Normal = dermaPanelAltColor
+SKIN.Colours.Properties.Line_Selected = dermaPanelActiveColor
+SKIN.Colours.Properties.Line_Hover = dermaPanelHoverColor
+SKIN.Colours.Properties.Title = color_white
+SKIN.Colours.Properties.Column_Normal = dermaPanelAltColor
+SKIN.Colours.Properties.Column_Selected = dermaPanelActiveColor
+SKIN.Colours.Properties.Column_Hover = dermaPanelHoverColor
+SKIN.Colours.Properties.Column_Disabled = Color(50, 50, 58)
+SKIN.Colours.Properties.Border = dermaPanelOutlineColor
+SKIN.Colours.Properties.Label_Normal = color_white
+SKIN.Colours.Properties.Label_Selected = color_white
+SKIN.Colours.Properties.Label_Hover = color_white
+SKIN.Colours.Properties.Label_Disabled = Color(255, 255, 255, 90)
+
+SKIN.Colours.Category.Header = color_white
+SKIN.Colours.Category.Header_Closed = Color(215, 215, 215)
+SKIN.Colours.Category.Line.Text = color_white
+SKIN.Colours.Category.Line.Text_Hover = color_white
+SKIN.Colours.Category.Line.Text_Selected = color_white
+SKIN.Colours.Category.Line.Text_Disabled = Color(255, 255, 255, 90)
+SKIN.Colours.Category.Line.Button = dermaPanelAltColor
+SKIN.Colours.Category.Line.Button_Hover = dermaPanelHoverColor
+SKIN.Colours.Category.Line.Button_Selected = dermaPanelActiveColor
+SKIN.Colours.Category.Line.Button_Disabled = Color(40, 40, 46, 180)
+SKIN.Colours.Category.LineAlt.Text = color_white
+SKIN.Colours.Category.LineAlt.Text_Hover = color_white
+SKIN.Colours.Category.LineAlt.Text_Selected = color_white
+SKIN.Colours.Category.LineAlt.Text_Disabled = Color(255, 255, 255, 90)
+SKIN.Colours.Category.LineAlt.Button = dermaPanelColor
+SKIN.Colours.Category.LineAlt.Button_Hover = dermaPanelHoverColor
+SKIN.Colours.Category.LineAlt.Button_Selected = dermaPanelActiveColor
+SKIN.Colours.Category.LineAlt.Button_Disabled = Color(32, 32, 38, 180)
+
+local function getPanelStateColor(panel)
+	if (panel.GetDisabled and panel:GetDisabled()) or (panel.IsEnabled and !panel:IsEnabled()) then
+		return Color(dermaPanelAltColor.r, dermaPanelAltColor.g, dermaPanelAltColor.b, 160)
+	end
+
+	if panel.Depressed or panel.m_bSelected or (panel.IsSelected and panel:IsSelected()) or (panel.GetToggle and panel:GetToggle()) then
+		return dermaPanelActiveColor
+	end
+
+	if panel.Hovered then
+		return dermaPanelHoverColor
+	end
+
+	return dermaPanelAltColor
+end
+
+local function paintDermaPanel(x, y, width, height, fillColor, outlineColor)
+	surface.SetDrawColor(fillColor or dermaPanelColor)
+	surface.DrawRect(x, y, width, height)
+
+	surface.SetDrawColor(outlineColor or dermaPanelOutlineColor)
+	surface.DrawOutlinedRect(x, y, width, height)
+end
 
 function SKIN.tex.Menu_Strip(x, y, width, height, color)
 	surface.SetDrawColor(0, 0, 0, 200)
@@ -283,29 +362,12 @@ end
 function SKIN:PaintButton(panel)
 	if (panel.m_bBackground) then
 		local w, h = panel:GetWide(), panel:GetTall()
-		local alpha = 50
-
-		if (panel:GetDisabled()) then
-			alpha = 10
-		elseif (panel.Depressed) then
-			alpha = 180
-		elseif (panel.Hovered) then
-			alpha = 75
-		end
 
 		if (panel:GetParent() and panel:GetParent():GetName() == "DListView_Column") then
-			surface.SetDrawColor(color_white)
-			surface.DrawRect(0, 0, w, h)
+			paintDermaPanel(0, 0, w, h, dermaPanelAltColor)
 		end
 
-		surface.SetDrawColor(30, 30, 30, alpha)
-		surface.DrawRect(0, 0, w, h)
-
-		surface.SetDrawColor(0, 0, 0, 180)
-		surface.DrawOutlinedRect(0, 0, w, h)
-
-		surface.SetDrawColor(180, 180, 180, 2)
-		surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
+		paintDermaPanel(0, 0, w, h, getPanelStateColor(panel))
 	end
 end
 
@@ -487,9 +549,7 @@ function SKIN:PaintButtonDown(panel, width, height)
 end
 
 function SKIN:PaintComboBox(panel, width, height)
-	if(panel.DrawAsPanel)then
-		self:PaintPanel(panel)
-	end
+	paintDermaPanel(0, 0, width, height, getPanelStateColor(panel))
 end
 
 function SKIN:PaintComboDownArrow(panel, width, height)
@@ -515,11 +575,7 @@ function SKIN:PaintPropertySheet( panel, width, height )
 
 	hg.DrawBlur(panel)
 
-	surface.SetDrawColor(30, 30, 30, 150)
-	surface.DrawRect(0, 0, width, height)
-
-	surface.SetDrawColor(255, 0, 0, 150)
-	surface.DrawOutlinedRect(0, 0, width, height)
+	paintDermaPanel(0, 0, width, height, Color(18, 18, 22, 220), dermaPanelOutlineColor)
 end
 
 function SKIN:PaintTab( panel, w, h )
@@ -532,11 +588,7 @@ function SKIN:PaintTab( panel, w, h )
 end
 
 function SKIN:PaintActiveTab( panel, w, h )
-
-	surface.SetDrawColor(30, 30, 30, 150)
-	surface.DrawRect(0, 0, w, h*0.8)
-	surface.SetDrawColor(255, 0, 0, 150)
-	surface.DrawOutlinedRect(0, 0, w, h*0.8,1)
+	paintDermaPanel(0, 0, w, h * 0.8, dermaPanelActiveColor, dermaPanelOutlineColor)
 
 end
 
@@ -551,6 +603,73 @@ function SKIN:PaintMenuOption(panel, width, height)
 	if (panel.m_bBackground and (panel.Hovered or panel.Highlight)) then
 		self:DrawImportantBackground(0, 0, width, height, hg.VGUI.MainColor)
 	end
+end
+
+function SKIN:PaintTree(panel, width, height)
+	if (!panel.m_bBackground) then return end
+
+	paintDermaPanel(0, 0, width, height, dermaPanelColor, Color(0, 0, 0, 200))
+end
+
+function SKIN:PaintCheckBox(panel, width, height)
+	local fillColor = panel:GetChecked() and ColorAlpha(hg.VGUI.MainColor, 200) or dermaPanelColor
+	paintDermaPanel(0, 0, width, height, fillColor, Color(0, 0, 0, 220))
+
+	if (panel:GetChecked()) then
+		surface.SetDrawColor(color_white)
+		surface.DrawLine(3, math.floor(height * 0.55), math.floor(width * 0.45), height - 4)
+		surface.DrawLine(math.floor(width * 0.45), height - 4, width - 3, 3)
+	end
+end
+
+function SKIN:PaintTreeNodeButton(panel, width, height)
+	if (!panel.m_bSelected) then return end
+
+	local textWidth = panel:GetTextSize()
+	paintDermaPanel(38, 0, textWidth + 8, height, dermaPanelActiveColor, dermaPanelOutlineColor)
+end
+
+function SKIN:PaintSelection(panel, width, height)
+	paintDermaPanel(0, 0, width, height, dermaPanelActiveColor, dermaPanelOutlineColor)
+end
+
+function SKIN:PaintCollapsibleCategory(panel, width, height)
+	if (height <= panel:GetHeaderHeight()) then
+		paintDermaPanel(0, 0, width, height, dermaPanelAltColor, dermaPanelOutlineColor)
+		return
+	end
+
+	paintDermaPanel(0, 0, width, height, dermaPanelColor, dermaPanelOutlineColor)
+	surface.SetDrawColor(dermaPanelAltColor)
+	surface.DrawRect(0, 0, width, panel:GetHeaderHeight())
+end
+
+function SKIN:PaintCategoryList(panel, width, height)
+	paintDermaPanel(0, 0, width, height, panel:GetBackgroundColor() or dermaPanelColor, dermaPanelOutlineColor)
+end
+
+function SKIN:PaintCategoryButton(panel, width, height)
+	surface.SetDrawColor(getPanelStateColor(panel))
+	surface.DrawRect(0, 0, width, height)
+end
+
+function SKIN:PaintListViewLine(panel, width, height)
+	surface.SetDrawColor(getPanelStateColor(panel))
+	surface.DrawRect(0, 0, width, height)
+end
+
+function SKIN:PaintListView(panel, width, height)
+	if (!panel.m_bBackground) then return end
+
+	paintDermaPanel(0, 0, width, height, dermaPanelColor, dermaPanelOutlineColor)
+end
+
+function SKIN:PaintTooltip(panel, width, height)
+	paintDermaPanel(0, 0, width, height, dermaPanelColor, dermaPanelOutlineColor)
+end
+
+function SKIN:PaintMenuBar(panel, width, height)
+	paintDermaPanel(0, 0, width, height, dermaPanelAltColor, dermaPanelOutlineColor)
 end
 
 function SKIN:PaintChatboxTabButton(panel, width, height)

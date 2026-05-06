@@ -161,12 +161,12 @@ if CLIENT then
 		local ply = LocalPlayer()
 		Dynamic = 0
 		local inv = ent:GetNetVar("Inventory")
+		if not inv then return end
 		inv["Money"] = {}
 		-- local entmoney = ent:GetNetVar("zb_Scrappers_RaidMoney") or 0
 		-- if entmoney > 0 then inv["Money"]["Money"] = entmoney end
 		local armor = ent:GetNetVar("Armor")
 		inv["Armor"] = armor
-		if not inv then return end
 
 		local nameStr = "Unknown"
 		if IsValid(ent) then
@@ -394,4 +394,18 @@ if CLIENT then
 		end
 	--plyMenu:SlideDown(0.5)
 	end
+
+	local function OpenLocalInventoryMenu()
+		local ply = LocalPlayer()
+		if not IsValid(ply) then return end
+		OpenInv(ply)
+	end
+
+	concommand.Add("hg_get_inventory", function()
+		OpenLocalInventoryMenu()
+	end)
+
+	concommand.Add("hg_inventory", function()
+		OpenLocalInventoryMenu()
+	end)
 end

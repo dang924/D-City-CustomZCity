@@ -185,8 +185,7 @@ local function WriteEntry(entry)
         Escape(entry.vicClass),Escape(entry.damage),   Escape(entry.hitgroup),
         Escape(entry.weapon),
     }, ",") .. "\n"
-    local existing = file.Read(path, "DATA") or ""
-    file.Write(path, existing .. line)
+    file.Append(path, line)
     
     -- Also write to SQL for persistence
     if ZC_DamageLog_WriteSQLEntry then

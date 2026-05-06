@@ -25,7 +25,7 @@ end)
 --query:Execute()
 
 hook.Add( "PlayerInitialSpawn","Pointshop_OnInitSpawn", function( ply )
-    local name = ply:Name()
+    local name = ZC_GetSteamName and ZC_GetSteamName(ply) or ply:Name()
 	local steamID64 = ply:SteamID64()
 
     if not PLUGIN.Active then

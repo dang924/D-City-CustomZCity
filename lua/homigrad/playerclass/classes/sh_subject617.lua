@@ -138,15 +138,58 @@ local SUBJECT617_HIDDEN_CONFIG = {
 local SUBJECT617_FEAR_PULSE = {
     Radius = 750,
     Interval = 0.9,
-    FearAdd = 0.12,           -- gradually builds fear over time (organism system handles conversion to fear)
+    FearAdd = 0.09,           -- gradually builds fear over time (organism system handles conversion to fear)
     FearAddMaxPerPlayer = 1.5, -- cap total fearadd contribution from 617 at half of organism max (3.0)
-    PanicAdd = 0.5,
+    FearDirect = 0.03,        -- immediate fear bump so players see stress/fear rise right away
+    FearDirectMax = 0.6,      -- keep direct bump below full panic; fearadd still drives sustained pressure
+    HeartbeatBoost = 30,      -- temporary BPM pressure like suicide panic, but lower
+    HeartbeatBoostDuration = 2.2,
+    PanicAdd = 0.35,
+    PainAdd = 2.75,
+    DisorientationAdd = 0.12,
+    ShockAdd = 0.45,
+    AdrenalineAdd = 0.045,
+    FXDuration = 3.0,
+    FXFearScale = 0.6,
+    FXFearAddScale = 0.45,
+    FXThreshold = 0.03,
 }
 
 local SUBJECT617_THERMAL_CONFIG = {
     MaxTicks   = 12,   -- seconds of thermal vision available at full charge
     DrainRate  = 1,    -- ticks drained per second while active
     RegenRate  = 0.25, -- ticks regened per second while inactive (full regen ~48s)
+}
+
+local SUBJECT617_REGEN_CONFIG = {
+    DamageHealSeconds = 60,
+    BrainHealScale = 0.1,
+}
+
+local SUBJECT617_REGEN_DAMAGE_FIELDS = {
+    "lleg",
+    "rleg",
+    "rarm",
+    "larm",
+    "chest",
+    "pelvis",
+    "spine1",
+    "spine2",
+    "spine3",
+    "skull",
+    "jaw",
+    "liver",
+    "intestines",
+    "heart",
+    "stomach",
+}
+
+local SUBJECT617_REGEN_DISLOCATION_FIELDS = {
+    "llegdislocation",
+    "rlegdislocation",
+    "rarmdislocation",
+    "larmdislocation",
+    "jawdislocation",
 }
 
 local SUBJECT617_MELEE_LOADOUT = {
@@ -162,9 +205,49 @@ local function isSubject617Player(ply)
     return IsValid(ply) and ply:IsPlayer() and ply.PlayerClassName == "subject617"
 end
 
+local function isSubject617GasMaskProtected(ply)
+    if not IsValid(ply) or not ply:IsPlayer() then return false end
+
+    local armors = ply.armors
+    if not istable(armors) and isfunction(ply.GetNetVar) then
+        armors = ply:GetNetVar("Armor", {})
+    end
+
+    local faceArmor = istable(armors) and tostring(armors["face"] or "") or ""
+    return faceArmor == "mask2" or faceArmor == "mask4" or faceArmor == "mask5"
+end
+
 local function isSubject617FearImmune(ply)
     if not IsValid(ply) or not ply:IsPlayer() then return false end
-    return isSubject617Player(ply) or tostring(ply.PlayerClassName or "") == "subject617"
+    return isSubject617Player(ply)
+        or tostring(ply.PlayerClassName or "") == "subject617"
+        or isSubject617GasMaskProtected(ply)
+end
+
+local function applySubject617OrganismRegeneration(owner, org, timeValue)
+    if not isSubject617Player(owner) or not owner:Alive() or not istable(org) then return end
+
+    local regen = timeValue / SUBJECT617_REGEN_CONFIG.DamageHealSeconds
+
+    for _, key in ipairs(SUBJECT617_REGEN_DAMAGE_FIELDS) do
+        org[key] = math.max((org[key] or 0) - regen, 0)
+    end
+
+    if istable(org.lungsR) then
+        org.lungsR[1] = math.max((org.lungsR[1] or 0) - regen, 0)
+        org.lungsR[2] = math.max((org.lungsR[2] or 0) - regen, 0)
+    end
+
+    if istable(org.lungsL) then
+        org.lungsL[1] = math.max((org.lungsL[1] or 0) - regen, 0)
+        org.lungsL[2] = math.max((org.lungsL[2] or 0) - regen, 0)
+    end
+
+    org.brain = math.max((org.brain or 0) - regen * SUBJECT617_REGEN_CONFIG.BrainHealScale, 0)
+
+    for _, key in ipairs(SUBJECT617_REGEN_DISLOCATION_FIELDS) do
+        org[key] = false
+    end
 end
 
 function ZC_IsSubject617Player(ply)
@@ -316,6 +399,12 @@ local function applySubject617FearPulse(hunter)
     if not isSubject617Player(hunter) then return end
     if not hunter:Alive() then return end
 
+    -- Coop/event safety: never emit Subject617 fear FX outside the Hidden round.
+    do
+        local round = isfunction(CurrentRound) and CurrentRound() or nil
+        if not (istable(round) and round.name == "hidden") then return end
+    end
+
     local now = CurTime()
     if (hunter.Subject617FearPulseAt or 0) > now then return end
 
@@ -336,6 +425,28 @@ local function applySubject617FearPulse(hunter)
         if currentFearadd < SUBJECT617_FEAR_PULSE.FearAddMaxPerPlayer then
             organism.fearadd = math.min(currentFearadd + SUBJECT617_FEAR_PULSE.FearAdd, SUBJECT617_FEAR_PULSE.FearAddMaxPerPlayer)
         end
+
+        local currentFear = organism.fear or 0
+        if currentFear < SUBJECT617_FEAR_PULSE.FearDirectMax then
+            organism.fear = math.min(currentFear + SUBJECT617_FEAR_PULSE.FearDirect, SUBJECT617_FEAR_PULSE.FearDirectMax)
+        end
+
+        organism.painadd = math.min((organism.painadd or 0) + SUBJECT617_FEAR_PULSE.PainAdd, 150)
+        organism.disorientation = math.min((organism.disorientation or 0) + SUBJECT617_FEAR_PULSE.DisorientationAdd, 10)
+        organism.shock = math.min((organism.shock or 0) + SUBJECT617_FEAR_PULSE.ShockAdd, 100)
+        organism.adrenalineAdd = math.max(organism.adrenalineAdd or 0, SUBJECT617_FEAR_PULSE.AdrenalineAdd)
+
+        organism.Subject617FearHeartbeatBoost = math.max(organism.Subject617FearHeartbeatBoost or 0, SUBJECT617_FEAR_PULSE.HeartbeatBoost)
+        organism.Subject617FearHeartbeatUntil = now + SUBJECT617_FEAR_PULSE.HeartbeatBoostDuration
+
+        local fearForFx = math.Clamp(
+            (organism.fear or 0) * SUBJECT617_FEAR_PULSE.FXFearScale +
+            math.Clamp((organism.fearadd or 0) / SUBJECT617_FEAR_PULSE.FearAddMaxPerPlayer, 0, 1) * SUBJECT617_FEAR_PULSE.FXFearAddScale,
+            0,
+            1
+        )
+        target:SetNWFloat("Subject617FearFXUntil", now + SUBJECT617_FEAR_PULSE.FXDuration)
+        target:SetNWFloat("Subject617FearFXStrength", fearForFx)
 
         target.Subject617FearPulseLastAt = now
         target.Subject617FearPulseHits = (target.Subject617FearPulseHits or 0) + 1
@@ -579,6 +690,10 @@ function CLASS.PlayerDeath(self)
 end
 
 if SERVER then
+    hook.Add("Org Think", "Subject617Regeneration", function(owner, org, timeValue)
+        applySubject617OrganismRegeneration(owner, org, timeValue)
+    end)
+
     hook.Add("RagdollDeath", "Subject617_ClearCloak", function(ply, ragdoll)
         if not IsValid(ply) or ply.PlayerClassName != "subject617" then return end
         clearSubject617EntityVisuals(ragdoll)
@@ -654,6 +769,8 @@ if SERVER then
     end)
 
     hook.Add("Think", "Subject617FearPulseThink", function()
+        local round = isfunction(CurrentRound) and CurrentRound() or nil
+        if not (istable(round) and round.name == "hidden") then return end
         for _, hunter in player.Iterator() do
             if not isSubject617Player(hunter) then continue end
             applySubject617FearPulse(hunter)
@@ -729,7 +846,7 @@ if SERVER then
     -- IRIS panic chatter when afraid or near 617
     hook.Add("Org Think", "Subject617IRISPanic", function(owner, org, timeValue)
         if not IsValid(owner) or not owner:IsPlayer() then return end
-        if isSubject617Player(owner) then return end
+        if isSubject617FearImmune(owner) then return end
         if owner:Team() == TEAM_SPECTATOR or not owner:Alive() then return end
 
         local fearLevel = org.fear or 0
@@ -758,7 +875,7 @@ if SERVER then
     hook.Add("KeyPress", "Subject617ReloadPanic", function(ply, key)
         if key != IN_RELOAD then return end
         if not IsValid(ply) or not ply:IsPlayer() then return end
-        if isSubject617Player(ply) then return end
+        if isSubject617FearImmune(ply) then return end
         if not ply:Alive() then return end
         if (ply.LastReloadPanicAt or 0) > CurTime() then return end
 
@@ -835,6 +952,7 @@ if CLIENT then
         darken = 0, multiply = 1, sizex = 4, sizey = 4,
         passes = 1, colormultiply = 1, red = 1, green = 1, blue = 1,
     }
+    local subject617FearFxLerp = 0
 
     local function enableSubject617Thermal()
         hook.Add("PreDrawEffects", "Subject617ThermalOutline", function()
@@ -899,18 +1017,6 @@ if CLIENT then
                 ["$pp_colour_mulb"]       = 0,
             })
 
-            local dlight = DynamicLight(LocalPlayer():EntIndex())
-            if dlight then
-                dlight.brightness = 1
-                dlight.Size       = 900
-                dlight.r          = 255
-                dlight.g          = 255
-                dlight.b          = 255
-                dlight.Decay      = 1000
-                dlight.Pos        = EyePos()
-                dlight.DieTime    = CurTime() + 0.1
-            end
-
             DrawBloom(thermalBloom.darken, thermalBloom.multiply, thermalBloom.sizex, thermalBloom.sizey,
                 thermalBloom.passes, thermalBloom.colormultiply, thermalBloom.red, thermalBloom.green, thermalBloom.blue)
             DrawTexturize(1, thermalMat)
@@ -972,34 +1078,69 @@ if CLIENT then
     -- IRIS fear screen effects (panic/dread visual feedback when afraid of 617)
     hook.Add("RenderScreenspaceEffects", "Subject617IRISFearFX", function()
         local lp = LocalPlayer()
-        if not IsValid(lp) then return end
-        if lp:Team() == TEAM_SPECTATOR or not lp:Alive() then return end
-        if isSubject617Player(lp) then return end
+        if not IsValid(lp) then
+            subject617FearFxLerp = 0
+            return
+        end
+        if lp:Team() == TEAM_SPECTATOR or not lp:Alive() then
+            subject617FearFxLerp = 0
+            return
+        end
+        if isSubject617Player(lp) then
+            subject617FearFxLerp = 0
+            return
+        end
+
+        -- DCity: stress/fear screen FX should only apply in the Hidden gamemode round.
+        if not (zb and zb.CROUND == "hidden") then
+            subject617FearFxLerp = 0
+            return
+        end
 
         local org = lp.organism
-        if not istable(org) then return end
+        local fearLevel = istable(org) and math.Clamp(org.fear or 0, 0, 1) or 0
 
-        local fearLevel = math.Clamp(org.fear or 0, 0, 1)
-        if fearLevel < 0.1 then return end
+        local fxUntil = lp:GetNWFloat("Subject617FearFXUntil", 0)
+        local fxStrength = math.Clamp(lp:GetNWFloat("Subject617FearFXStrength", 0), 0, 1)
+        local netIntensity = 0
+        if fxUntil > CurTime() then
+            local fade = math.Clamp((fxUntil - CurTime()) / SUBJECT617_FEAR_PULSE.FXDuration, 0, 1)
+            netIntensity = fxStrength * fade
+        end
 
-        -- Red tint + desaturation increases with fear, creates panic effect
-        local intensity = fearLevel * 0.8
+        local targetIntensity = math.max(fearLevel * SUBJECT617_FEAR_PULSE.FXFearScale, netIntensity)
+        local blendRate = math.min(FrameTime() * (targetIntensity > subject617FearFxLerp and 8 or 3), 1)
+        subject617FearFxLerp = Lerp(blendRate, subject617FearFxLerp, targetIntensity)
+
+        local intensity = subject617FearFxLerp
+        if intensity < SUBJECT617_FEAR_PULSE.FXThreshold then
+            subject617FearFxLerp = 0
+            return
+        end
+
         DrawColorModify({
-            ["$pp_colour_addr"]       = intensity * 0.15,
-            ["$pp_colour_addg"]       = -intensity * 0.05,
-            ["$pp_colour_addb"]       = -intensity * 0.05,
-            ["$pp_colour_brightness"] = -intensity * 0.2,
-            ["$pp_colour_contrast"]   = 1 + (intensity * 0.3),
-            ["$pp_colour_colour"]     = 1 - (intensity * 0.4),
-            ["$pp_colour_mulr"]       = 1 + (intensity * 0.2),
-            ["$pp_colour_mulg"]       = 1 - (intensity * 0.1),
-            ["$pp_colour_mulb"]       = 1 - (intensity * 0.1),
+            ["$pp_colour_addr"]       = intensity * 0.12,
+            ["$pp_colour_addg"]       = -intensity * 0.03,
+            ["$pp_colour_addb"]       = -intensity * 0.03,
+            ["$pp_colour_brightness"] = -intensity * 0.14,
+            ["$pp_colour_contrast"]   = 1 + (intensity * 0.25),
+            ["$pp_colour_colour"]     = 1 - (intensity * 0.35),
+            ["$pp_colour_mulr"]       = intensity * 0.10,
+            ["$pp_colour_mulg"]       = 0,
+            ["$pp_colour_mulb"]       = 0,
         })
 
-        -- Bloom effect increases with panic/fearadd threshold
-        if (org.fearadd or 0) > 0.5 then
-            local panicIntensity = math.Clamp((org.fearadd or 0) / 1.5, 0, 1)
-            DrawBloom(0.5, panicIntensity * 3, 6, 6, 1, 1, panicIntensity / 20, 0.3, 0.1)
+        local panicIntensity = math.max(
+            (istable(org) and math.Clamp((org.fearadd or 0) / SUBJECT617_FEAR_PULSE.FearAddMaxPerPlayer, 0, 1) or 0) * SUBJECT617_FEAR_PULSE.FXFearAddScale,
+            intensity
+        )
+        if panicIntensity > 0.18 then
+            DrawBloom(0.45, panicIntensity * 1.6, 5, 5, 1, 0.9, panicIntensity * 0.05, 0.10, 0.08)
+        end
+
+        if panicIntensity > 0.32 then
+            DrawMotionBlur(0.08, 0.55 + panicIntensity * 0.65, 0.01)
+            DrawMaterialOverlay("effects/tp_eyefx/tunnel", panicIntensity * 0.14)
         end
     end)
 end

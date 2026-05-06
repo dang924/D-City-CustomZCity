@@ -330,6 +330,53 @@ local function drawEffectIcon(effect, x, y, size)
     end
 end
 
+local function getInspectLimbRows(org)
+    local function norm(v)
+        v = tonumber(v) or 0
+        if v < 0 then v = 0 end
+        if v > 1 then v = 1 end
+        return v
+    end
+
+    local torsoDmg = math.max(
+        getOrgVal(org, "chest", 0),
+        getOrgVal(org, "spine1", 0),
+        getOrgVal(org, "spine2", 0),
+        getOrgVal(org, "spine3", 0),
+        getOrgVal(org, "pelvis", 0) * 0.9
+    )
+
+    local rows = {
+        {label = "Head", key = "head", dmg = math.max(getOrgVal(org, "skull", 0), getOrgVal(org, "jaw", 0) * 0.7), amput = false},
+        {label = "Torso", key = "torso", dmg = torsoDmg, amput = false},
+        {label = "Left Arm", key = "larm", dmg = getOrgVal(org, "larm", 0), amput = org.larmamputated == true},
+        {label = "Right Arm", key = "rarm", dmg = getOrgVal(org, "rarm", 0), amput = org.rarmamputated == true},
+        {label = "Left Leg", key = "lleg", dmg = getOrgVal(org, "lleg", 0), amput = org.llegamputated == true},
+        {label = "Right Leg", key = "rleg", dmg = getOrgVal(org, "rleg", 0), amput = org.rlegamputated == true},
+    }
+
+    for _, row in ipairs(rows) do
+        if row.amput then
+            row.text = "AMPUTATED"
+            row.col = Color(255, 90, 90, 255)
+        else
+            local hpRatio = 1 - norm(row.dmg)
+            local hpPct = math.floor(hpRatio * 100 + 0.5)
+            row.text = tostring(hpPct) .. "%"
+
+            if hpPct >= 100 then
+                row.col = Color(130, 230, 130, 255)
+            elseif hpPct >= 70 then
+                row.col = Color(220, 210, 120, 255)
+            else
+                row.col = Color(255, 120, 120, 255)
+            end
+        end
+    end
+
+    return rows
+end
+
 hook.Add("HUDPaint", "DCityPatch_MoodlesMedicInspect", function()
     if not cv_enabled:GetBool() then return end
     if isHiddenRoundActive() then return end
@@ -341,14 +388,18 @@ hook.Add("HUDPaint", "DCityPatch_MoodlesMedicInspect", function()
     if not screen.visible then return end
 
     local effects = buildEffects(target.organism, target)
+    local limbRows = getInspectLimbRows(target.organism or {})
     local maxIcons = math.max(1, cv_max_icons:GetInt())
     local drawCount = math.min(#effects, maxIcons)
 
     local iconSize = 26
     local spacing = 30
     local headerH = 16
-    local panelH = 46
-    local panelW = math.max(190, drawCount * spacing + 24)
+    local bodyHeaderH = 14
+    local rowH = 14
+    local bodyRowsH = bodyHeaderH + (#limbRows * rowH) + 6
+    local panelH = 46 + bodyRowsH
+    local panelW = math.max(250, drawCount * spacing + 24)
 
     local x = screen.x + 24
     local y = screen.y - 22
@@ -358,15 +409,23 @@ hook.Add("HUDPaint", "DCityPatch_MoodlesMedicInspect", function()
 
     if drawCount <= 0 then
         draw.SimpleText("Stable", "DermaDefault", x + 8, y + headerH + 10, Color(140, 230, 140, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
-        return
+    else
+        for i = 1, drawCount do
+            drawEffectIcon(effects[i], x + 8 + (i - 1) * spacing, y + headerH + 2, iconSize)
+        end
+
+        if #effects > drawCount then
+            draw.SimpleText("+" .. tostring(#effects - drawCount), "DermaDefault", x + panelW - 8, y + headerH + iconSize + 2, Color(200, 210, 230, 240), TEXT_ALIGN_RIGHT, TEXT_ALIGN_TOP)
+        end
     end
 
-    for i = 1, drawCount do
-        drawEffectIcon(effects[i], x + 8 + (i - 1) * spacing, y + headerH + 2, iconSize)
-    end
+    local bodyStartY = y + 48
+    draw.SimpleText("Body Condition", "DermaDefaultBold", x + 8, bodyStartY, Color(200, 240, 255, 245), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
 
-    if #effects > drawCount then
-        draw.SimpleText("+" .. tostring(#effects - drawCount), "DermaDefault", x + panelW - 8, y + panelH - 6, Color(200, 210, 230, 240), TEXT_ALIGN_RIGHT, TEXT_ALIGN_BOTTOM)
+    for i, row in ipairs(limbRows) do
+        local ry = bodyStartY + bodyHeaderH + (i - 1) * rowH
+        draw.SimpleText(row.label, "DermaDefault", x + 8, ry, Color(210, 220, 235, 245), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+        draw.SimpleText(row.text, "DermaDefaultBold", x + panelW - 8, ry, row.col, TEXT_ALIGN_RIGHT, TEXT_ALIGN_TOP)
     end
 end)
 

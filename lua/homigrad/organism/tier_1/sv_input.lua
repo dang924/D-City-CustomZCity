@@ -413,6 +413,7 @@ function hg.ExplodeHead(ent)
 		
 		ent.organism.headamputated = true
 		ent.headexploded = true
+		hook.Run("OnHeadExplode", ply, ent)
 
 		ent.organism.owner.fullsend = true
 		hg.send_bareinfo(ent.organism)
@@ -420,6 +421,7 @@ function hg.ExplodeHead(ent)
 end
 
 local hg_bloodimpacts = ConVarExists("hg_bloodimpacts") and GetConVar("hg_bloodimpacts") or CreateConVar("hg_bloodimpacts", 0, FCVAR_ARCHIVE + FCVAR_REPLICATED, "Enable custom blood impact effects spray cool kill death", 0, 1)
+local hg_blood_mul = ConVarExists("hg_blood_mul") and GetConVar("hg_blood_mul") or CreateConVar("hg_blood_mul", 0.5, FCVAR_ARCHIVE, "Blood particle count multiplier (0.0 = none, 1.0 = full)", 0, 1)
 
 local net, math, hg, IsValid = net, math, hg, IsValid
 local takeRagdollDamage
@@ -781,7 +783,7 @@ hook.Add("EntityTakeDamage", "homigrad-damage", function(ent, dmgInfo)
 				net.WriteVector(inputHole[1])
 				net.WriteVector(dir / 2)
 				net.WriteFloat(dmg)
-				net.WriteInt(ent.bloodamt2, 8)
+				net.WriteInt(math.max(1, math.Round(ent.bloodamt2 * hg_blood_mul:GetFloat())),8)
 				net.Broadcast()
 				ent.bloodamt2 = 0
 			end)
@@ -918,7 +920,12 @@ hook.Add("EntityTakeDamage", "homigrad-damage", function(ent, dmgInfo)
 		end
 		
 		if ent:IsRagdoll() then
-			ent:GetPhysicsObjectNum(bone or 0):ApplyForceCenter(force * 1)
+			-- guard: bone may be -1 for non-standard NPC models;
+			-- GetPhysicsObjectNum(-1) returns an invalid object and ApplyForceCenter on it crashes the engine
+			local phys_push = ent:GetPhysicsObjectNum(bone and bone >= 0 and bone or 0)
+			if IsValid(phys_push) then
+				phys_push:ApplyForceCenter(force * 1)
+			end
 		end
 	end
 
@@ -946,6 +953,7 @@ hook.Add("EntityTakeDamage", "homigrad-damage", function(ent, dmgInfo)
 	org.dmgstack[hitgroup][3] = (org.dmgstack[hitgroup][3] or 0) + damageStack / 500
 
 	local mat = ent:GetBoneMatrix(ent:TranslatePhysBoneToBone(bone))
+	if not mat then mat = Matrix() end
 	local hitgroup_max = 100--hitgroup == HITGROUP_HEAD and 150 or 30
 	local instant = org.dmgstack[hitgroup][1] > hitgroup_max
 	--print(damageStack, org.dmgstack[hitgroup][1], org.dmgstack[hitgroup][3])
@@ -1080,7 +1088,7 @@ hook.Add("EntityTakeDamage", "homigrad-damage", function(ent, dmgInfo)
 			net.WriteVector(dmgPos)
 			net.WriteVector(dirCool / 15)
 			net.WriteFloat(dmg / 10)
-			net.WriteInt(1, 8)
+			net.WriteInt(hg_blood_mul:GetFloat() > 0 and 1 or 0, 8)
 			net.Broadcast()
 
 			--[[if (hitgroup ~= HITGROUP_HEAD) then

@@ -1,4 +1,4 @@
-﻿AddCSLuaFile()
+AddCSLuaFile()
 --
 function SWEP:Initialize_Reload()
 	self.LastReload = 0

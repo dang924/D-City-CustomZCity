@@ -5,6 +5,9 @@ local MODE = MODE
 local hiddenLoadoutFrame = nil
 local hiddenLoadoutPayload = nil
 local hiddenLoadoutBackdrop = nil
+local hiddenReadyCount = 0
+local hiddenReadyTotal = 0
+local HIDDEN_PREP_MENU_TIMER = "ZBHiddenPrepMenuLock"
 
 local PREVIEW_HOLD_ACTIVITIES = {
     pistol = ACT_HL2MP_IDLE_PISTOL,
@@ -77,6 +80,27 @@ local function unpackAngle(data)
     return Angle(tonumber(data.p) or 0, tonumber(data.y) or 0, tonumber(data.r) or 0)
 end
 
+local function hiddenLoadoutHasImageAsset(imagePath)
+    if not isstring(imagePath) then
+        return false
+    end
+
+    local normalized = string.Trim(string.lower(imagePath))
+    if normalized == "" then
+        return false
+    end
+
+    normalized = string.gsub(normalized, "\\", "/")
+    normalized = string.gsub(normalized, "^materials/", "")
+    normalized = string.gsub(normalized, "%.vmt$", "")
+    normalized = string.gsub(normalized, "%.vtf$", "")
+    normalized = string.gsub(normalized, "%.png$", "")
+
+    return file.Exists("materials/" .. normalized .. ".vmt", "GAME")
+        or file.Exists("materials/" .. normalized .. ".vtf", "GAME")
+        or file.Exists("materials/" .. normalized .. ".png", "GAME")
+end
+
 local function buildEntryMaps(payload)
     local maps = {
         primary = {},
@@ -106,13 +130,19 @@ local function normalizeSelection(payload, maps, selection)
     local normalized = {
         primary = "",
         secondary = "",
+        attachments = {
+            primary = {},
+            secondary = {},
+        },
         armor = {},
     }
 
     selection = istable(selection) and selection or {}
+    selection.attachments = istable(selection.attachments) and selection.attachments or {}
     selection.armor = istable(selection.armor) and selection.armor or {}
 
     local defaultLoadout = MODE:GetDefaultHiddenLoadout()
+    local defaultAttachments = istable(defaultLoadout.attachments) and defaultLoadout.attachments or {}
     local defaultArmor = istable(defaultLoadout.armor) and defaultLoadout.armor or {}
 
     normalized.primary = tostring(selection.primary or defaultLoadout.primary or "")
@@ -147,6 +177,9 @@ local function normalizeSelection(payload, maps, selection)
         normalized.armor[slotName] = armorKey
     end
 
+    normalized.attachments.primary = MODE:NormalizeHiddenWeaponAttachments(normalized.primary, selection.attachments.primary or defaultAttachments.primary)
+    normalized.attachments.secondary = MODE:NormalizeHiddenWeaponAttachments(normalized.secondary, selection.attachments.secondary or defaultAttachments.secondary)
+
     return normalized
 end
 
@@ -166,6 +199,20 @@ local function calculateSelectionCost(payload, maps, selection)
         local entry = maps.armor[slotName] and maps.armor[slotName][armorKey] or nil
         if entry then
             totalCost = totalCost + (tonumber(entry.score) or 0)
+        end
+    end
+
+    -- Attachment costs (admin overrides via MODE.HiddenAdminData; default 0).
+    if MODE.CalculateHiddenAttachmentScore and istable(selection.attachments) then
+        for _, weaponSlot in ipairs({"primary", "secondary"}) do
+            local slotAttachments = selection.attachments[weaponSlot]
+            if istable(slotAttachments) then
+                for _, attKey in pairs(slotAttachments) do
+                    if isstring(attKey) and attKey ~= "" then
+                        totalCost = totalCost + (MODE:CalculateHiddenAttachmentScore(attKey) or 0)
+                    end
+                end
+            end
         end
     end
 
@@ -294,9 +341,17 @@ local function buildSelectionSnapshot(selection)
     local snapshot = {
         primary = tostring(selection and selection.primary or ""),
         secondary = tostring(selection and selection.secondary or ""),
+        attachments = {
+            primary = {},
+            secondary = {},
+        },
         armor = {},
     }
+    local attachments = istable(selection and selection.attachments) and selection.attachments or {}
     local armor = istable(selection and selection.armor) and selection.armor or {}
+
+    snapshot.attachments.primary = MODE:NormalizeHiddenWeaponAttachments(snapshot.primary, attachments.primary)
+    snapshot.attachments.secondary = MODE:NormalizeHiddenWeaponAttachments(snapshot.secondary, attachments.secondary)
 
     for _, slotName in ipairs(MODE:GetHiddenLoadoutSlots()) do
         snapshot.armor[slotName] = MODE:NormalizeHiddenArmorKey(armor[slotName])
@@ -315,6 +370,14 @@ local function selectionsEqual(left, right)
 
     if leftSnapshot.secondary ~= rightSnapshot.secondary then
         return false
+    end
+
+    for _, weaponSlot in ipairs({"primary", "secondary"}) do
+        for _, slotName in ipairs(MODE:GetHiddenLoadoutAttachmentSlots()) do
+            if MODE:NormalizeHiddenAttachmentKey(leftSnapshot.attachments[weaponSlot][slotName]) ~= MODE:NormalizeHiddenAttachmentKey(rightSnapshot.attachments[weaponSlot][slotName]) then
+                return false
+            end
+        end
     end
 
     for _, slotName in ipairs(MODE:GetHiddenLoadoutSlots()) do
@@ -353,6 +416,40 @@ local function brightenColor(colorValue, amount)
         math.Clamp((colorValue.b or 0) + amount, 0, 255),
         colorValue.a or 255
     )
+end
+
+local function formatAttachmentPlacement(slotName)
+    local label = string.gsub(tostring(slotName or ""), "_", " ")
+    label = string.gsub(label, "(%a)([%w']*)", function(first, rest)
+        return string.upper(first) .. string.lower(rest)
+    end)
+
+    return label ~= "" and label or "Attachment"
+end
+
+local function findAttachmentEntry(optionMap, placement, attKey)
+    attKey = MODE:NormalizeHiddenAttachmentKey(attKey)
+    for _, entry in ipairs(optionMap[placement] or {}) do
+        if MODE:NormalizeHiddenAttachmentKey(entry.key) == attKey then
+            return entry
+        end
+    end
+end
+
+local function formatAttachmentSummary(className, attachments)
+    local optionMap = MODE:BuildHiddenAttachmentOptionsForWeapon(className)
+    local normalized = MODE:NormalizeHiddenWeaponAttachments(className, attachments)
+    local entries = {}
+
+    for _, placement in ipairs(MODE:GetHiddenLoadoutAttachmentSlots()) do
+        local attKey = MODE:NormalizeHiddenAttachmentKey(normalized[placement])
+        if attKey ~= "" then
+            local entry = findAttachmentEntry(optionMap, placement, attKey)
+            entries[#entries + 1] = string.format("%s: %s", formatAttachmentPlacement(placement), entry and tostring(entry.name or attKey) or attKey)
+        end
+    end
+
+    return #entries > 0 and table.concat(entries, " | ") or "None"
 end
 
 local function entryMatchesFilter(entry, filterText)
@@ -463,7 +560,10 @@ local function ensureHiddenLoadoutBackdrop()
     hiddenLoadoutBackdrop:SetSize(ScrW(), ScrH())
     hiddenLoadoutBackdrop:SetVisible(true)
     hiddenLoadoutBackdrop:SetMouseInputEnabled(true)
-    hiddenLoadoutBackdrop:SetKeyboardInputEnabled(false)
+    -- Must allow keyboard input on the parent chain, otherwise DTextEntry
+    -- children of the loadout frame can never receive key events even though
+    -- the frame itself is a popup.
+    hiddenLoadoutBackdrop:SetKeyboardInputEnabled(true)
 
     return hiddenLoadoutBackdrop
 end
@@ -473,6 +573,10 @@ local function removeHiddenLoadoutBackdrop()
         hiddenLoadoutBackdrop:Remove()
         hiddenLoadoutBackdrop = nil
     end
+end
+
+local function getHiddenReadyCounterText()
+    return string.format("Players ready: %d / %d", hiddenReadyCount, hiddenReadyTotal)
 end
 
 local CARD = {}
@@ -595,6 +699,81 @@ function CARD:Paint(w, h)
 end
 
 vgui.Register("ZBHiddenLoadoutChoiceCard", CARD, "DButton")
+
+local ATTACHMENT_BUTTON = {}
+
+function ATTACHMENT_BUTTON:Init()
+    self:SetText("")
+    self:SetSize(52, 52)
+
+    self.Icon = self:Add("DImage")
+    self.Icon:SetPos(8, 8)
+    self.Icon:SetSize(36, 36)
+    self.Icon:SetVisible(false)
+
+    self.Placeholder = self:Add("DLabel")
+    self.Placeholder:SetFont("HiddenLoadout_Small")
+    self.Placeholder:SetTextColor(COL_TEXT_DIM)
+    self.Placeholder:SetContentAlignment(5)
+    self.Placeholder:SetText("NONE")
+end
+
+function ATTACHMENT_BUTTON:SetEntry(entry)
+    self.Entry = entry or {}
+    self:SetTooltip(tostring(self.Entry.name or self.Entry.key or "Attachment"))
+
+    local iconPath = tostring(self.Entry.icon or "")
+    local hasIcon = hiddenLoadoutHasImageAsset(iconPath)
+    self.Icon:SetVisible(hasIcon)
+    self.Placeholder:SetVisible(not hasIcon)
+
+    if hasIcon then
+        self.Icon:SetImage(iconPath)
+    else
+        self.Icon:SetImage(nil)
+    end
+
+    if tostring(self.Entry.key or "") == "" then
+        self.Placeholder:SetText("NONE")
+    else
+        self.Placeholder:SetText(string.upper(string.sub(tostring(self.Entry.name or self.Entry.key or "?"), 1, 3)))
+    end
+end
+
+function ATTACHMENT_BUTTON:SetSelected(isSelected)
+    self.Selected = isSelected and true or false
+end
+
+function ATTACHMENT_BUTTON:PerformLayout(w, h)
+    self.Icon:SetPos(8, 8)
+    self.Icon:SetSize(math.max(w - 16, 24), math.max(h - 16, 24))
+    self.Placeholder:SetPos(4, 4)
+    self.Placeholder:SetSize(w - 8, h - 8)
+end
+
+function ATTACHMENT_BUTTON:DoClick()
+    if isfunction(self.OnChoose) then
+        self:OnChoose(self.Entry)
+    end
+end
+
+function ATTACHMENT_BUTTON:Paint(w, h)
+    local fill = themeColor("Secondary", COL_PANEL_DARK)
+    local outline = themeColor("Outline", COL_BORDER)
+
+    if self.Selected then
+        fill = themeColor("Primary", COL_ACCENT)
+        outline = brightenColor(fill, 30)
+    elseif self:IsHovered() then
+        fill = brightenColor(fill, 12)
+    end
+
+    draw.RoundedBox(6, 0, 0, w, h, fill)
+    surface.SetDrawColor(outline)
+    surface.DrawOutlinedRect(0, 0, w, h, 1)
+end
+
+vgui.Register("ZBHiddenLoadoutAttachmentButton", ATTACHMENT_BUTTON, "DButton")
 
 local PREVIEW = {}
 
@@ -766,7 +945,10 @@ function PREVIEW:PostDrawModel(entity)
 
     if self.WeaponData and hg then
         if isfunction(hg.set_holdrh) then
-            hg.set_holdrh(entity, self.WeaponData.rightHold)
+            local rhBone = entity:LookupBone("ValveBiped.Bip01_R_Hand")
+            if rhBone and rhBone >= 0 then
+                hg.set_holdrh(entity, self.WeaponData.rightHold)
+            end
         end
 
         if self.WeaponData.useLeftHand and isfunction(hg.set_hold) then
@@ -829,9 +1011,17 @@ function PANEL:Init()
         armor = {},
     }
     self.Selection = {
+        attachments = {
+            primary = {},
+            secondary = {},
+        },
         armor = {},
     }
     self.OriginalSelection = {
+        attachments = {
+            primary = {},
+            secondary = {},
+        },
         armor = {},
     }
     self.PublicPresetMap = {}
@@ -873,6 +1063,14 @@ function PANEL:Init()
     self.StatusLabel:SetFont("HiddenLoadout_Small")
     self.StatusLabel:SetTextColor(COL_TEXT_DIM)
     self.StatusLabel:SetContentAlignment(6)
+
+    self.ReadyCountLabel = vgui.Create("DLabel", self)
+    self.ReadyCountLabel:SetPos(786, 640)
+    self.ReadyCountLabel:SetSize(210, 18)
+    self.ReadyCountLabel:SetFont("HiddenLoadout_Small")
+    self.ReadyCountLabel:SetTextColor(COL_ACCENT)
+    self.ReadyCountLabel:SetContentAlignment(6)
+    self.ReadyCountLabel:SetText(getHiddenReadyCounterText())
 
     self.Sheet = vgui.Create("DPropertySheet", self)
     self.Sheet:SetPos(420, 52)
@@ -1007,6 +1205,71 @@ function PANEL:Init()
         self.ArmorStats[slotName] = statsLabel
     end
 
+    self.AttachmentPanel = vgui.Create("DPanel", self.Sheet)
+    self.AttachmentPanel:Dock(FILL)
+    self.AttachmentPanel.Paint = self.PrimaryPanel.Paint
+    self.Sheet:AddSheet("Attachments", self.AttachmentPanel, "icon16/plugin.png")
+
+    self.AttachmentGroups = {}
+    for _, weaponSlot in ipairs({"primary", "secondary"}) do
+        local group = {
+            Sections = {},
+        }
+
+        group.Panel = vgui.Create("DPanel", self.AttachmentPanel)
+        group.Panel.Paint = function(_, w, h)
+            draw.RoundedBox(6, 0, 0, w, h, COL_PANEL_DARK)
+            surface.SetDrawColor(COL_BORDER)
+            surface.DrawOutlinedRect(0, 0, w, h, 1)
+        end
+
+        group.Title = group.Panel:Add("DLabel")
+        group.Title:SetFont("HiddenLoadout_Label")
+        group.Title:SetTextColor(COL_TEXT)
+        group.Title:SetText(weaponSlot == "primary" and "Primary Weapon Attachments" or "Sidearm Attachments")
+
+        group.Summary = group.Panel:Add("DLabel")
+        group.Summary:SetFont("HiddenLoadout_Small")
+        group.Summary:SetTextColor(COL_TEXT_DIM)
+        group.Summary:SetWrap(true)
+        group.Summary:SetAutoStretchVertical(true)
+
+        group.Scroll = group.Panel:Add("DScrollPanel")
+        group.Content = group.Scroll:Add("DPanel")
+        group.Content.Paint = nil
+
+        for _, placement in ipairs(MODE:GetHiddenLoadoutAttachmentSlots()) do
+            local section = group.Content:Add("DPanel")
+            section:SetSize(160, 148)
+            section.Paint = function(_, w, h)
+                draw.RoundedBox(6, 0, 0, w, h, COL_PANEL)
+                surface.SetDrawColor(COL_BORDER)
+                surface.DrawOutlinedRect(0, 0, w, h, 1)
+            end
+
+            section.Title = section:Add("DLabel")
+            section.Title:SetFont("HiddenLoadout_Label")
+            section.Title:SetTextColor(COL_TEXT)
+            section.Title:SetText(formatAttachmentPlacement(placement))
+
+            section.Selected = section:Add("DLabel")
+            section.Selected:SetFont("HiddenLoadout_Small")
+            section.Selected:SetTextColor(COL_TEXT_DIM)
+            section.Selected:SetWrap(true)
+            section.Selected:SetAutoStretchVertical(true)
+
+            section.Scroll = section:Add("DScrollPanel")
+            section.Cards = section.Scroll:Add("DIconLayout")
+            section.Cards:Dock(TOP)
+            section.Cards:SetSpaceX(6)
+            section.Cards:SetSpaceY(6)
+
+            group.Sections[placement] = section
+        end
+
+        self.AttachmentGroups[weaponSlot] = group
+    end
+
     self.PublicPanel = vgui.Create("DPanel", self.Sheet)
     self.PublicPanel:Dock(FILL)
     self.PublicPanel.Paint = self.PrimaryPanel.Paint
@@ -1057,6 +1320,11 @@ function PANEL:Init()
     self.ResetButton:SetPos(952, 662)
     self.ResetButton:SetSize(104, 32)
     styleActionButton(self.ResetButton, "Reset", COL_WARN)
+
+    self.ReadyButton = vgui.Create("DButton", self)
+    self.ReadyButton:SetPos(840, 662)
+    self.ReadyButton:SetSize(104, 32)
+    styleActionButton(self.ReadyButton, "Ready", COL_SUCCESS)
 
     self.CloseButton = vgui.Create("DButton", self)
     self.CloseButton:SetPos(1064, 622)
@@ -1109,6 +1377,11 @@ function PANEL:Init()
         self:RefreshState()
     end
 
+    self.ReadyButton.DoClick = function()
+        net.Start("hidden_ready_toggle")
+        net.SendToServer()
+    end
+
     self.CloseButton.DoClick = function()
         self:Close()
     end
@@ -1119,6 +1392,13 @@ function PANEL:Init()
 
     self.PublicPublishButton.DoClick = function()
         self:PublishCurrentSelection()
+    end
+
+    -- Admin tab is added last so it sits at the rightmost position. Visible
+    -- only to superadmins; the panel is built lazily and re-rendered on every
+    -- HiddenAdminData sync from the server.
+    if self.BuildAdminTab then
+        self:BuildAdminTab()
     end
 
     self:ApplyResponsiveFrame()
@@ -1244,6 +1524,12 @@ function PANEL:PerformLayout(w, h)
     self.ResetButton:SetPos(buttonLeftX, secondRowY)
     self.ResetButton:SetSize(buttonW, buttonH)
 
+    self.ReadyButton:SetPos(buttonLeftX + buttonW + buttonGap, secondRowY)
+    self.ReadyButton:SetSize(buttonW, buttonH)
+
+    self.ReadyCountLabel:SetPos(buttonLeftX, secondRowY - 20)
+    self.ReadyCountLabel:SetSize(buttonW * 2 + buttonGap, 18)
+
     local panelPad = 12
     local searchH = 28
     local statsH = 60
@@ -1269,6 +1555,48 @@ function PANEL:PerformLayout(w, h)
 
     self.ArmorScroll:SetPos(panelPad, panelPad)
     self.ArmorScroll:SetSize(panelW, math.max(panelH - panelPad * 2, 120))
+
+    local attachmentGap = 12
+    local attachmentGroupW = math.max(math.floor((panelW - attachmentGap) * 0.5), 180)
+    local attachmentGroupH = math.max(panelH - panelPad * 2, 160)
+    local attachmentSummaryH = 42
+    local attachmentTitleH = 24
+    local attachmentScrollY = panelPad + attachmentTitleH + attachmentSummaryH + 10
+    local attachmentScrollH = math.max(attachmentGroupH - attachmentScrollY - panelPad, 90)
+
+    for index, weaponSlot in ipairs({"primary", "secondary"}) do
+        local group = self.AttachmentGroups and self.AttachmentGroups[weaponSlot] or nil
+        if group and IsValid(group.Panel) then
+            local groupX = panelPad + (index - 1) * (attachmentGroupW + attachmentGap)
+            group.Panel:SetPos(groupX, panelPad)
+            group.Panel:SetSize(attachmentGroupW, attachmentGroupH)
+            group.Title:SetPos(12, 10)
+            group.Title:SetSize(attachmentGroupW - 24, attachmentTitleH)
+            group.Summary:SetPos(12, 34)
+            group.Summary:SetSize(attachmentGroupW - 24, attachmentSummaryH)
+            group.Scroll:SetPos(12, attachmentScrollY)
+            group.Scroll:SetSize(attachmentGroupW - 24, attachmentScrollH)
+
+            local sectionY = 0
+            local sectionW = math.max(group.Scroll:GetWide(), 120)
+            for _, placement in ipairs(MODE:GetHiddenLoadoutAttachmentSlots()) do
+                local section = group.Sections[placement]
+                if section and IsValid(section) then
+                    section:SetPos(0, sectionY)
+                    section:SetSize(sectionW, 156)
+                    section.Title:SetPos(10, 8)
+                    section.Title:SetSize(sectionW - 20, 20)
+                    section.Selected:SetPos(10, 28)
+                    section.Selected:SetSize(sectionW - 20, 34)
+                    section.Scroll:SetPos(10, 68)
+                    section.Scroll:SetSize(sectionW - 20, 78)
+                    sectionY = sectionY + 164
+                end
+            end
+
+            group.Content:SetSize(sectionW, sectionY)
+        end
+    end
 
     local armorSectionGap = 10
     local armorSectionW = math.max(math.floor((self.ArmorScroll:GetWide() - armorSectionGap * (#MODE:GetHiddenLoadoutSlots() - 1)) / math.max(#MODE:GetHiddenLoadoutSlots(), 1)), 120)
@@ -1335,7 +1663,7 @@ function PANEL:UpdateModalState()
 
     if IsValid(hiddenLoadoutBackdrop) then
         hiddenLoadoutBackdrop:SetVisible(true)
-        hiddenLoadoutBackdrop:SetMouseInputEnabled(isPrepModal)
+        hiddenLoadoutBackdrop:SetMouseInputEnabled(true)
     end
 end
 
@@ -1468,10 +1796,59 @@ function PANEL:PopulateWeaponCards(slotName)
         selectedClass,
         function(entry)
             self.Selection[slotName] = tostring(entry.class or "")
+            self.Selection.attachments[slotName] = MODE:NormalizeHiddenWeaponAttachments(self.Selection[slotName], self.Selection.attachments[slotName])
             self:RefreshState()
         end,
         IsValid(searchEntry) and searchEntry:GetValue() or ""
     )
+end
+
+function PANEL:PopulateAttachmentSections(weaponSlot)
+    local group = self.AttachmentGroups and self.AttachmentGroups[weaponSlot] or nil
+    if not group then
+        return
+    end
+
+    local className = tostring(self.Selection[weaponSlot] or "")
+    local optionMap = MODE:BuildHiddenAttachmentOptionsForWeapon(className)
+    local selectedMap = self.Selection.attachments[weaponSlot] or {}
+    local weaponEntry = self.EntryMaps[weaponSlot] and self.EntryMaps[weaponSlot][className] or nil
+    local weaponName = weaponEntry and tostring(weaponEntry.name or className) or (className ~= "" and className or "None")
+
+    if IsValid(group.Summary) then
+        group.Summary:SetText(string.format("Weapon: %s\nSelected attachments: %s", weaponName, formatAttachmentSummary(className, selectedMap)))
+    end
+
+    for _, placement in ipairs(MODE:GetHiddenLoadoutAttachmentSlots()) do
+        local section = group.Sections[placement]
+        if not section or not IsValid(section.Cards) then
+            continue
+        end
+
+        local entries = optionMap[placement] or {}
+        local selectedKey = MODE:NormalizeHiddenAttachmentKey(selectedMap[placement])
+        local selectedEntry = findAttachmentEntry(optionMap, placement, selectedKey)
+
+        if IsValid(section.Selected) then
+            section.Selected:SetText(string.format("Selected: %s", selectedEntry and tostring(selectedEntry.name or selectedKey) or "None"))
+        end
+
+        section.Cards:Clear()
+        for _, entry in ipairs(entries) do
+            local button = section.Cards:Add("ZBHiddenLoadoutAttachmentButton")
+            button:SetEntry(entry)
+            button:SetSelected(MODE:NormalizeHiddenAttachmentKey(entry.key) == selectedKey)
+            button.OnChoose = function(_, chosenEntry)
+                self.Selection.attachments[weaponSlot] = self.Selection.attachments[weaponSlot] or {}
+                self.Selection.attachments[weaponSlot][placement] = MODE:NormalizeHiddenAttachmentKey(chosenEntry.key)
+                self.Selection.attachments[weaponSlot] = MODE:NormalizeHiddenWeaponAttachments(self.Selection[weaponSlot], self.Selection.attachments[weaponSlot])
+                self:RefreshState()
+            end
+        end
+
+        section.Cards:InvalidateLayout(true)
+        section.Cards:SizeToChildren(false, true)
+    end
 end
 
 function PANEL:PopulateArmorCards(slotName)
@@ -1666,8 +2043,19 @@ function PANEL:UpdateStatusState()
     self.StatusLabel:SetTextColor(statusColor)
 end
 
+function PANEL:UpdateReadyCounterLabel()
+    if not IsValid(self.ReadyCountLabel) then
+        return
+    end
+
+    local allReady = hiddenReadyTotal > 0 and hiddenReadyCount >= hiddenReadyTotal
+    self.ReadyCountLabel:SetText(getHiddenReadyCounterText())
+    self.ReadyCountLabel:SetTextColor(allReady and COL_SUCCESS or COL_ACCENT)
+end
+
 function PANEL:Think()
     self:UpdateStatusState()
+    self:UpdateReadyCounterLabel()
     self:UpdateModalState()
 
     if IsValid(self.SaveButton) then
@@ -1681,11 +2069,34 @@ function PANEL:Think()
     if IsValid(self.PublicPublishButton) then
         self.PublicPublishButton:SetEnabled(self:CanCurrentlyEdit() and not self.IsOverBudget)
     end
+
+    -- Flush deferred admin-tab rebuild once the user is no longer typing into
+    -- an admin override field. The hidden_loadout_admin_sync handler skips the
+    -- rebuild when an admin DTextEntry has focus to avoid stealing keystrokes.
+    if self.AdminRefreshPending and self.AdminTabs then
+        local focused = vgui.GetKeyboardFocus()
+        local stillTyping = IsValid(focused)
+            and focused:GetClassName() == "TextEntry"
+            and IsValid(self.AdminPanel)
+            and focused:HasParent(self.AdminPanel)
+
+        if not stillTyping then
+            self.AdminRefreshPending = nil
+            for kind in pairs(self.AdminTabs) do
+                self:RefreshAdminTab(kind)
+            end
+            if self.RefreshState then
+                self:RefreshState()
+            end
+        end
+    end
 end
 
 function PANEL:PopulateControls()
     self:PopulateWeaponCards("primary")
     self:PopulateWeaponCards("secondary")
+    self:PopulateAttachmentSections("primary")
+    self:PopulateAttachmentSections("secondary")
 
     for _, slotName in ipairs(MODE:GetHiddenLoadoutSlots()) do
         self:PopulateArmorCards(slotName)
@@ -1743,7 +2154,9 @@ function PANEL:RefreshState()
 
     local summaryLines = {
         string.format("Primary: %s", primaryEntry and primaryEntry.name or "None"),
+        string.format("Primary Atts: %s", formatAttachmentSummary(self.Selection.primary, self.Selection.attachments.primary)),
         string.format("Sidearm: %s", secondaryEntry and secondaryEntry.name or "None"),
+        string.format("Sidearm Atts: %s", formatAttachmentSummary(self.Selection.secondary, self.Selection.attachments.secondary)),
     }
 
     for _, slotName in ipairs(MODE:GetHiddenLoadoutSlots()) do
@@ -1770,7 +2183,10 @@ function PANEL:RefreshState()
     self.PublicPublishButton:SetEnabled(self:CanCurrentlyEdit() and not overBudget)
     self:UpdatePublicPresetInfo()
     self:UpdateStatusState()
+    self:UpdateReadyCounterLabel()
     self:UpdateChoiceSelectionStates()
+    self:PopulateAttachmentSections("primary")
+    self:PopulateAttachmentSections("secondary")
     self.Preview:SetPreviewState(self.Payload, self.EntryMaps, self.Selection)
 end
 
@@ -1793,8 +2209,8 @@ function PANEL:SaveSelection()
     net.SendToServer()
 end
 
-function PANEL:Close()
-    if self:CanCurrentlyEdit() then
+function PANEL:Close(force)
+    if not force and self:CanCurrentlyEdit() then
         return
     end
 
@@ -1805,12 +2221,398 @@ function PANEL:OnRemove()
     removeHiddenLoadoutBackdrop()
 end
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Hidden loadout admin tab (superadmin only)
+-- Lets staff override per-key scores and toggle blacklist flags for weapons,
+-- armor, and attachments shown in the prep loadout menu. Changes are sent to
+-- the server via net.Start; the server persists to data/zcity/hidden_loadout_admin.json
+-- and broadcasts the updated table back via "hidden_loadout_admin_sync".
+-- ─────────────────────────────────────────────────────────────────────────────
+
+local function localPlayerCanEditHiddenAdmin()
+    local lply = LocalPlayer()
+    return IsValid(lply) and lply:IsSuperAdmin()
+end
+
+local function collectHiddenAdminEntries(kind, payload)
+    local entries = {}
+    local seen = {}
+
+    local function add(key, name)
+        key = string.lower(string.Trim(tostring(key or "")))
+        if key == "" or seen[key] then return end
+        seen[key] = true
+        entries[#entries + 1] = {
+            key = key,
+            name = tostring(name or key),
+        }
+    end
+
+    if kind == "weapon" then
+        if istable(payload) then
+            for _, slot in ipairs({"primary", "secondary"}) do
+                local list = payload[slot]
+                if istable(list) then
+                    for _, entry in ipairs(list) do
+                        add(entry.class, entry.name or entry.class)
+                    end
+                end
+            end
+        end
+        -- Include known weapons even if currently blacklisted/filtered.
+        for _, swepData in ipairs(weapons.GetList() or {}) do
+            local className = tostring(swepData.ClassName or swepData.Classname or "")
+            if className ~= "" then
+                add(className, swepData.PrintName or className)
+            end
+        end
+    elseif kind == "armor" then
+        if istable(payload) and istable(payload.armor) then
+            for _, slotEntries in pairs(payload.armor) do
+                if istable(slotEntries) then
+                    for _, entry in ipairs(slotEntries) do
+                        if entry.key ~= "" then
+                            add(entry.key, entry.name or entry.key)
+                        end
+                    end
+                end
+            end
+        end
+        if hg and istable(hg.armor) then
+            for _, slotTable in pairs(hg.armor) do
+                if istable(slotTable) then
+                    for armorKey in pairs(slotTable) do
+                        local label = (hg.armorNames and hg.armorNames[armorKey]) or armorKey
+                        add(armorKey, label)
+                    end
+                end
+            end
+        end
+    elseif kind == "attachment" then
+        if hg and istable(hg.attachments) then
+            local nameDict = (hg.attachmentslaunguage or hg.attachmentslanguage) or {}
+            for _, placementTable in pairs(hg.attachments) do
+                if istable(placementTable) then
+                    for attKey in pairs(placementTable) do
+                        if isstring(attKey) and attKey ~= "" and attKey ~= "empty" then
+                            add(attKey, nameDict[attKey] or attKey)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(entries, function(a, b)
+        return string.lower(a.name) < string.lower(b.name)
+    end)
+    return entries
+end
+
+local function defaultScoreFor(kind, key)
+    if kind == "weapon" then
+        local stored = weapons.GetStored(key)
+        if not stored then return nil end
+        local override = MODE.HiddenAdminData and MODE.HiddenAdminData.scoreOverrides
+            and MODE.HiddenAdminData.scoreOverrides.weapon and MODE.HiddenAdminData.scoreOverrides.weapon[key]
+        -- Temporarily strip override to compute the raw default.
+        if MODE.HiddenAdminData and MODE.HiddenAdminData.scoreOverrides and MODE.HiddenAdminData.scoreOverrides.weapon then
+            MODE.HiddenAdminData.scoreOverrides.weapon[key] = nil
+        end
+        local computed = MODE.CalculateHiddenWeaponScore and MODE:CalculateHiddenWeaponScore(stored, key) or 0
+        if MODE.HiddenAdminData and MODE.HiddenAdminData.scoreOverrides and MODE.HiddenAdminData.scoreOverrides.weapon then
+            MODE.HiddenAdminData.scoreOverrides.weapon[key] = override
+        end
+        return computed
+    elseif kind == "armor" then
+        local override = MODE.HiddenAdminData and MODE.HiddenAdminData.scoreOverrides
+            and MODE.HiddenAdminData.scoreOverrides.armor and MODE.HiddenAdminData.scoreOverrides.armor[key]
+        if MODE.HiddenAdminData and MODE.HiddenAdminData.scoreOverrides and MODE.HiddenAdminData.scoreOverrides.armor then
+            MODE.HiddenAdminData.scoreOverrides.armor[key] = nil
+        end
+        local computed = MODE.CalculateHiddenArmorScore and MODE:CalculateHiddenArmorScore(key) or 0
+        if MODE.HiddenAdminData and MODE.HiddenAdminData.scoreOverrides and MODE.HiddenAdminData.scoreOverrides.armor then
+            MODE.HiddenAdminData.scoreOverrides.armor[key] = override
+        end
+        return computed
+    elseif kind == "attachment" then
+        return 0
+    end
+    return nil
+end
+
+local function sendAdminScore(kind, key, value)
+    if util.NetworkStringToID("hidden_loadout_admin_set_score") == 0 then return end
+    net.Start("hidden_loadout_admin_set_score")
+    net.WriteString(kind)
+    net.WriteString(key)
+    net.WriteBool(value ~= nil)
+    if value ~= nil then
+        net.WriteInt(math.Clamp(math.floor(value), 0, 120), 16)
+    end
+    net.SendToServer()
+end
+
+local function sendAdminBlacklist(kind, key, enabled)
+    if util.NetworkStringToID("hidden_loadout_admin_set_blacklist") == 0 then return end
+    net.Start("hidden_loadout_admin_set_blacklist")
+    net.WriteString(kind)
+    net.WriteString(key)
+    net.WriteBool(enabled and true or false)
+    net.SendToServer()
+end
+
+function PANEL:BuildAdminTab()
+    if not localPlayerCanEditHiddenAdmin() then return end
+    if IsValid(self.AdminPanel) then return end
+
+    self.AdminPanel = vgui.Create("DPanel", self.Sheet)
+    self.AdminPanel:Dock(FILL)
+    self.AdminPanel.Paint = self.PrimaryPanel.Paint
+    self.Sheet:AddSheet("Admin", self.AdminPanel, "icon16/wrench.png")
+
+    local header = vgui.Create("DLabel", self.AdminPanel)
+    header:SetFont("HiddenLoadout_Label")
+    header:SetTextColor(COL_TEXT)
+    header:SetText("Superadmin score & blacklist controls")
+    header:Dock(TOP)
+    header:DockMargin(12, 10, 12, 4)
+    header:SetTall(22)
+
+    local note = vgui.Create("DLabel", self.AdminPanel)
+    note:SetFont("HiddenLoadout_Small")
+    note:SetTextColor(COL_TEXT_DIM)
+    note:SetText("Override scores (0-120) and blacklist entries from the prep menu. Changes persist across map restarts.")
+    note:Dock(TOP)
+    note:DockMargin(12, 0, 12, 6)
+    note:SetTall(16)
+
+    local resetBar = vgui.Create("DPanel", self.AdminPanel)
+    resetBar:Dock(TOP)
+    resetBar:DockMargin(12, 0, 12, 6)
+    resetBar:SetTall(28)
+    resetBar.Paint = nil
+
+    local resetBtn = vgui.Create("DButton", resetBar)
+    resetBtn:Dock(LEFT)
+    resetBtn:SetWide(220)
+    resetBtn:SetText("Reset all overrides + blacklists")
+    resetBtn.DoClick = function()
+        Derma_Query("Reset every Hidden loadout override and blacklist entry?",
+            "Confirm reset", "Reset", function()
+                if util.NetworkStringToID("hidden_loadout_admin_reset") == 0 then return end
+                net.Start("hidden_loadout_admin_reset")
+                net.SendToServer()
+            end, "Cancel", function() end)
+    end
+
+    self.AdminInner = vgui.Create("DPropertySheet", self.AdminPanel)
+    self.AdminInner:Dock(FILL)
+    self.AdminInner:DockMargin(8, 4, 8, 8)
+
+    self.AdminTabs = {}
+    for _, kind in ipairs({"weapon", "armor", "attachment"}) do
+        local kindPanel = vgui.Create("DPanel", self.AdminInner)
+        kindPanel:Dock(FILL)
+        kindPanel.Paint = function(_, w, h)
+            draw.RoundedBox(6, 0, 0, w, h, COL_PANEL_DARK)
+        end
+
+        local searchEntry = vgui.Create("DTextEntry", kindPanel)
+        searchEntry:Dock(TOP)
+        searchEntry:DockMargin(8, 8, 8, 4)
+        searchEntry:SetTall(24)
+        setEntryPlaceholder(searchEntry, "Filter " .. kind .. "s by key or name")
+        styleSearchEntry(searchEntry)
+
+        local scroll = vgui.Create("DScrollPanel", kindPanel)
+        scroll:Dock(FILL)
+        scroll:DockMargin(8, 0, 8, 8)
+
+        local list = vgui.Create("DPanel", scroll)
+        list:Dock(TOP)
+        list.Paint = nil
+
+        self.AdminInner:AddSheet(string.upper(string.sub(kind, 1, 1)) .. string.sub(kind, 2) .. "s",
+            kindPanel, "icon16/page_white_edit.png")
+
+        self.AdminTabs[kind] = {
+            Panel       = kindPanel,
+            Search      = searchEntry,
+            Scroll      = scroll,
+            List        = list,
+            Rows        = {},
+            FilterText  = "",
+        }
+
+        searchEntry.OnChange = function(entry)
+            self.AdminTabs[kind].FilterText = string.lower(entry:GetText() or "")
+            self:RefreshAdminTab(kind)
+        end
+    end
+
+    for _, kind in ipairs({"weapon", "armor", "attachment"}) do
+        self:RefreshAdminTab(kind)
+    end
+end
+
+function PANEL:RefreshAdminTab(kind)
+    local tab = self.AdminTabs and self.AdminTabs[kind]
+    if not tab or not IsValid(tab.List) then return end
+
+    -- Clear existing rows.
+    for _, row in ipairs(tab.Rows) do
+        if IsValid(row) then row:Remove() end
+    end
+    tab.Rows = {}
+
+    local entries = collectHiddenAdminEntries(kind, self.Payload)
+    local filter = tab.FilterText or ""
+
+    local data = MODE:GetHiddenAdminData()
+    local scoreBucket = data.scoreOverrides[kind] or {}
+    local blackBucket = data.blacklist[kind] or {}
+
+    local rowH = 30
+    local visibleCount = 0
+    for _, entry in ipairs(entries) do
+        if filter ~= "" then
+            if not (string.find(string.lower(entry.key), filter, 1, true)
+                or string.find(string.lower(entry.name), filter, 1, true)) then
+                continue
+            end
+        end
+
+        local row = vgui.Create("DPanel", tab.List)
+        row:Dock(TOP)
+        row:DockMargin(0, 0, 0, 4)
+        row:SetTall(rowH)
+        row.Paint = function(_, w, h)
+            draw.RoundedBox(4, 0, 0, w, h, COL_PANEL)
+        end
+
+        local nameLbl = vgui.Create("DLabel", row)
+        nameLbl:Dock(LEFT)
+        nameLbl:DockMargin(8, 0, 0, 0)
+        nameLbl:SetWide(280)
+        nameLbl:SetFont("HiddenLoadout_Small")
+        nameLbl:SetTextColor(COL_TEXT)
+        nameLbl:SetText(string.format("%s  (%s)", entry.name, entry.key))
+
+        local defaultScore = defaultScoreFor(kind, entry.key)
+        local defaultLbl = vgui.Create("DLabel", row)
+        defaultLbl:Dock(LEFT)
+        defaultLbl:DockMargin(8, 0, 0, 0)
+        defaultLbl:SetWide(80)
+        defaultLbl:SetFont("HiddenLoadout_Mono")
+        defaultLbl:SetTextColor(COL_TEXT_DIM)
+        defaultLbl:SetText("def: " .. tostring(defaultScore or "-"))
+
+        local overrideEntry = vgui.Create("DTextEntry", row)
+        overrideEntry:Dock(LEFT)
+        overrideEntry:DockMargin(8, 4, 0, 4)
+        overrideEntry:SetWide(70)
+        overrideEntry:SetNumeric(true)
+        local current = tonumber(scoreBucket[entry.key])
+        if current ~= nil then
+            overrideEntry:SetText(tostring(current))
+        end
+        setEntryPlaceholder(overrideEntry, "score")
+        styleSearchEntry(overrideEntry)
+
+        local applyBtn = vgui.Create("DButton", row)
+        applyBtn:Dock(LEFT)
+        applyBtn:DockMargin(4, 4, 0, 4)
+        applyBtn:SetWide(56)
+        applyBtn:SetText("Set")
+        applyBtn.DoClick = function()
+            local raw = string.Trim(overrideEntry:GetText() or "")
+            if raw == "" then
+                sendAdminScore(kind, entry.key, nil)
+            else
+                local n = tonumber(raw)
+                if n then
+                    sendAdminScore(kind, entry.key, n)
+                end
+            end
+        end
+
+        local clearBtn = vgui.Create("DButton", row)
+        clearBtn:Dock(LEFT)
+        clearBtn:DockMargin(4, 4, 0, 4)
+        clearBtn:SetWide(70)
+        clearBtn:SetText("Default")
+        clearBtn.DoClick = function()
+            overrideEntry:SetText("")
+            sendAdminScore(kind, entry.key, nil)
+        end
+
+        local blacklistChk = vgui.Create("DCheckBoxLabel", row)
+        blacklistChk:Dock(RIGHT)
+        blacklistChk:DockMargin(0, 6, 12, 6)
+        blacklistChk:SetText("Blacklisted")
+        blacklistChk:SetTextColor(COL_TEXT_DIM)
+        blacklistChk:SetValue(blackBucket[entry.key] == true)
+        blacklistChk.OnChange = function(_, val)
+            sendAdminBlacklist(kind, entry.key, val and true or false)
+        end
+
+        tab.Rows[#tab.Rows + 1] = row
+        visibleCount = visibleCount + 1
+    end
+
+    tab.List:SizeToChildren(false, true)
+    tab.List:InvalidateLayout(true)
+end
+
+net.Receive("hidden_loadout_admin_sync", function()
+    local raw = net.ReadString()
+    local payload = util.JSONToTable(raw or "")
+    if not istable(payload) then return end
+
+    -- Replace MODE.HiddenAdminData wholesale so shared score helpers reflect the new state.
+    MODE.HiddenAdminData = {
+        scoreOverrides = istable(payload.scoreOverrides) and payload.scoreOverrides or {},
+        blacklist      = istable(payload.blacklist) and payload.blacklist or {},
+    }
+    for _, kind in ipairs({"weapon", "armor", "attachment"}) do
+        MODE.HiddenAdminData.scoreOverrides[kind] = istable(MODE.HiddenAdminData.scoreOverrides[kind])
+            and MODE.HiddenAdminData.scoreOverrides[kind] or {}
+        MODE.HiddenAdminData.blacklist[kind] = istable(MODE.HiddenAdminData.blacklist[kind])
+            and MODE.HiddenAdminData.blacklist[kind] or {}
+    end
+
+    if IsValid(hiddenLoadoutFrame) and hiddenLoadoutFrame.AdminTabs then
+        -- If the user is currently typing into one of the admin DTextEntry
+        -- fields, rebuilding the rows would yank focus away every time the
+        -- server broadcasts (which is on every keystroke commit). Defer the
+        -- rebuild until focus leaves the admin tab.
+        local focused = vgui.GetKeyboardFocus()
+        local typingInAdmin = IsValid(focused)
+            and focused:GetClassName() == "TextEntry"
+            and IsValid(hiddenLoadoutFrame.AdminPanel)
+            and focused:HasParent(hiddenLoadoutFrame.AdminPanel)
+
+        if typingInAdmin then
+            hiddenLoadoutFrame.AdminRefreshPending = true
+        else
+            for kind in pairs(hiddenLoadoutFrame.AdminTabs) do
+                hiddenLoadoutFrame:RefreshAdminTab(kind)
+            end
+            if hiddenLoadoutFrame.RefreshState then
+                hiddenLoadoutFrame:RefreshState()
+            end
+        end
+    end
+end)
+
 vgui.Register("ZBHiddenLoadoutEditor", PANEL, "DFrame")
 
 local function openHiddenLoadoutEditor(payload)
     hiddenLoadoutPayload = payload
 
     local backdrop = ensureHiddenLoadoutBackdrop()
+    local shouldFocus = not IsValid(hiddenLoadoutFrame) or payload.autoOpen
 
     if not IsValid(hiddenLoadoutFrame) then
         hiddenLoadoutFrame = vgui.Create("ZBHiddenLoadoutEditor", backdrop)
@@ -1818,7 +2620,18 @@ local function openHiddenLoadoutEditor(payload)
 
     hiddenLoadoutFrame:SetPayload(payload)
     hiddenLoadoutFrame:SetVisible(true)
-    hiddenLoadoutFrame:MakePopup()
+    if shouldFocus then
+        hiddenLoadoutFrame:MakePopup()
+    end
+end
+
+local function requestHiddenLoadoutEditor()
+    if util.NetworkStringToID("hidden_loadout_request") == 0 then
+        return
+    end
+
+    net.Start("hidden_loadout_request")
+    net.SendToServer()
 end
 
 net.Receive("hidden_loadout_sync", function()
@@ -1847,14 +2660,42 @@ net.Receive("hidden_public_presets_sync", function()
     end
 end)
 
-net.Receive("hidden_prep_state", function()
-    local isPreparation = net.ReadBool()
+net.Receive("hidden_ready_sync", function()
+    hiddenReadyCount = net.ReadUInt(8)
+    hiddenReadyTotal = net.ReadUInt(8)
+
+    if IsValid(hiddenLoadoutFrame) then
+        hiddenLoadoutFrame:UpdateReadyCounterLabel()
+    end
+end)
+
+-- Use a hook instead of a second net.Receive: only one net.Receive handler can
+-- be active per message, so registering one here would clobber the timer/HUD
+-- reset done in cl_hidden.lua. cl_hidden.lua now broadcasts this hook after
+-- mutating its own state.
+hook.Add("HG_HiddenPrepStateChanged", "ZBHiddenLoadoutPrepState", function(isPreparation, combatStart, combatDuration)
     if isPreparation then
+        timer.Create(HIDDEN_PREP_MENU_TIMER, 0.75, 0, function()
+            local lply = LocalPlayer()
+            if not IsValid(lply) then return end
+            if lply:Team() ~= 1 then return end
+
+            local needsRequest = not IsValid(hiddenLoadoutFrame)
+                or not hiddenLoadoutFrame:IsVisible()
+
+            if needsRequest then
+                requestHiddenLoadoutEditor()
+            end
+        end)
+
+        requestHiddenLoadoutEditor()
         return
     end
 
+    timer.Remove(HIDDEN_PREP_MENU_TIMER)
+
     if IsValid(hiddenLoadoutFrame) then
-        hiddenLoadoutFrame:Close()
+        hiddenLoadoutFrame:Close(true)
         hiddenLoadoutFrame = nil
     end
 
@@ -1867,6 +2708,5 @@ concommand.Add("zb_hidden_loadout", function()
         return
     end
 
-    net.Start("hidden_loadout_request")
-    net.SendToServer()
+    requestHiddenLoadoutEditor()
 end)

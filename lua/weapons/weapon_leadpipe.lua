@@ -1,4 +1,4 @@
-﻿if SERVER then AddCSLuaFile() end
+if SERVER then AddCSLuaFile() end
 SWEP.Base = "weapon_melee"
 SWEP.PrintName = "Lead Pipe"
 SWEP.Instructions = "Part of a lead pipe, you could beat someone up with it, good stuff for a riot.\n\nLMB to attack.\nRMB to block."

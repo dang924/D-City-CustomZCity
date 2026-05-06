@@ -3,6 +3,84 @@ function hg.GetCurrentArmor(ply)
 end
 
 if CLIENT then
+	local function BuildZScavBackpackArmorDef(class)
+		if not class or not ZSCAV or not ZSCAV.GetGearDef then return nil end
+
+		local gear = ZSCAV:GetGearDef(class)
+		if not gear or gear.slot ~= "backpack" then return nil end
+
+		local d = gear.display or {}
+		local pos = Vector(
+			tonumber(d.pos and d.pos.x) or 0,
+			tonumber(d.pos and d.pos.y) or 0,
+			tonumber(d.pos and d.pos.z) or 0
+		)
+		local ang = Angle(
+			tonumber(d.ang and d.ang.p) or 0,
+			tonumber(d.ang and d.ang.y) or 0,
+			tonumber(d.ang and d.ang.r) or 0
+		)
+		local scale = tonumber(d.scale) or 1
+
+		local model = nil
+		local stored = scripted_ents.GetStored(class)
+		if stored and stored.t and stored.t.Model then
+			model = stored.t.Model
+		end
+		if not model or model == "" then return nil end
+
+		hg.armor.backpack = hg.armor.backpack or {}
+		hg.armor.backpack[class] = {
+			"backpack",
+			model,
+			pos,
+			ang,
+			bone = tostring(d.bone or "ValveBiped.Bip01_Spine2"),
+			model = model,
+			femPos = Vector(0, 0, 0),
+			scale = scale,
+			femscale = scale,
+			nobonemerge = false
+		}
+
+		return hg.armor.backpack[class]
+	end
+
+	local function MergeZScavBackpackArmor(ply, armors, sourceEnt)
+		if not IsValid(ply) then return armors end
+		if not ZSCAV then return armors end
+
+		local inv = nil
+		if IsValid(sourceEnt) then
+			inv = sourceEnt:GetNetVar("ZScavInv", nil) or sourceEnt.PredictedZScavInv
+		end
+		if not inv then
+			inv = ply:GetNetVar("ZScavInv", nil)
+		end
+		local cls = inv and inv.gear and inv.gear.backpack and inv.gear.backpack.class or nil
+		if not cls then return armors end
+
+		local bagDef = BuildZScavBackpackArmorDef(cls)
+		if not bagDef then return armors end
+
+		local merged = table.Copy(armors or {})
+		merged.backpack = cls
+		return merged
+	end
+
+	function hg.HasZScavBackpack(ply, ent)
+		if not IsValid(ply) then return false end
+		if not ZSCAV then return false end
+		local inv = nil
+		if IsValid(ent) then
+			inv = ent:GetNetVar("ZScavInv", nil) or ent.PredictedZScavInv
+		end
+		if not inv then
+			inv = ply:GetNetVar("ZScavInv", nil)
+		end
+		return inv and inv.gear and inv.gear.backpack and inv.gear.backpack.class ~= nil
+	end
+
 	local whitelist = {
 		weapon_physgun = true,
 		gmod_tool = true,
@@ -91,6 +169,9 @@ if CLIENT then
 	function RenderArmors(ply, armors, ent)
 
 		if not IsValid(ply) or not armors then return end
+		-- Backpack is merged into the armor pipeline the same way as all other gear,
+		-- covering both alive and ragdolled players uniformly.
+		armors = MergeZScavBackpackArmor(ply, armors, ent)
 	
 		--if armors and #armors < 1 then return end
 		
@@ -133,7 +214,10 @@ if CLIENT then
 		
 		for placement, armor in pairs(armors) do
 			if placement == "torso" and blVestmodels[ply:GetModel()] then continue end
-			local armorData = hg.armor[placement][armor]
+			local placementTable = hg.armor[placement]
+			if not placementTable then continue end
+			local armorData = placementTable[armor]
+			if not armorData then continue end
 
 			if armorData["model"] == "" then continue end
 

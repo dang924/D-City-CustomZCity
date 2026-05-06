@@ -2,6 +2,27 @@ MODE.name = "tdm"
 
 local MODE = MODE
 
+local function tdmHasImageAsset(imagePath)
+	if not isstring(imagePath) then
+		return false
+	end
+
+	local normalized = string.Trim(string.lower(imagePath))
+	if normalized == "" then
+		return false
+	end
+
+	normalized = string.gsub(normalized, "\\", "/")
+	normalized = string.gsub(normalized, "^materials/", "")
+	normalized = string.gsub(normalized, "%.vmt$", "")
+	normalized = string.gsub(normalized, "%.vtf$", "")
+	normalized = string.gsub(normalized, "%.png$", "")
+
+	return file.Exists("materials/" .. normalized .. ".vmt", "GAME")
+		or file.Exists("materials/" .. normalized .. ".vtf", "GAME")
+		or file.Exists("materials/" .. normalized .. ".png", "GAME")
+end
+
 net.Receive("tdm_start",function()
     surface.PlaySound("csgo_round.wav")
 	zb.rtype = net.ReadString()
@@ -365,14 +386,15 @@ local function OpenBuyMenu()
 			ItemPanel:DockMargin(0,5,0,0)
 			ItemPanel.Paint = PaintPanel1
 			--print(Item.ItemClass,weapon)
-			if ( weapon ~= nil and ( (weapon.WepSelectIcon2 and weapon.WepSelectIcon2:GetName()) or (weapon.IconOverride)) ) or ((ent and ent.t.IconOverride)) then
+			local itemIcon = ( weapon ~= nil and ( (weapon.WepSelectIcon2 and weapon.WepSelectIcon2:GetName() .. ".png") or weapon.IconOverride) ) or ((ent and ent.t.IconOverride) or "")
+			if tdmHasImageAsset(itemIcon) then
 				local ItemButton = vgui.Create("DImage",ItemPanel)
 				local bBox = ((ent and ent.t.IconOverride) or weapon~=nil and weapon.WepSelectIcon2box)
 				ItemButton:SetSize(ScrH() * ( (bBox and 0.1) or 0.17), ScrH() * 0.1)
 				ItemButton:Dock(LEFT)
 				local boxed = ScrH()*0.07/2
 				ItemButton:DockMargin(5 + (bBox and boxed or 0),5,5 + (bBox and boxed or 0),5)
-				ItemButton:SetImage( ( weapon ~= nil and ( (weapon.WepSelectIcon2 and weapon.WepSelectIcon2:GetName() .. ".png") or weapon.IconOverride) ) or ((ent and ent.t.IconOverride) or "none") )
+				ItemButton:SetImage(itemIcon)
 			end
 
 			local ItemButton = vgui.Create("DPanel",ItemPanel)
@@ -459,7 +481,9 @@ local function OpenBuyMenu()
 				for id,AttachN in pairs(Item.Attachments) do
 					local ico = hg.attachmentsIcons[AttachN]
 					local Attach = vgui.Create( "DImageButton" )
-					Attach:SetImage(ico)
+					if tdmHasImageAsset(ico) then
+						Attach:SetImage(ico)
+					end
 					Attach:SetSize(45,45)
 
 					Attach.Attachment = {k,n,AttachN}

@@ -6,6 +6,10 @@ local CARRY_ANCHOR_BONE = "ValveBiped.Bip01_Spine2"
 local CARRY_OFFSET = Vector(-10, 0, 4)
 local CARRY_ANGLE_OFFSET = Angle(0, 180, 0)
 
+local function IsZScavBackCarryDisabled()
+    return ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive()
+end
+
 local CHEST_ANCHOR_BONE_PRIORITY = {
     "spine2",
     "spine3",
@@ -65,6 +69,7 @@ local function ResolveCarryableFakeRagdoll(target, ragdoll)
 end
 
 local function CanCarryNow(ply)
+    if IsZScavBackCarryDisabled() then return false end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return false end
     if ply:InVehicle() then return false end
     if IsValid(ply.FakeRagdoll) then return false end
@@ -75,6 +80,7 @@ local function CanCarryNow(ply)
 end
 
 local function CanMaintainCarry(ply)
+    if IsZScavBackCarryDisabled() then return false end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return false end
     if ply:InVehicle() then return false end
     if IsValid(ply.FakeRagdoll) then return false end

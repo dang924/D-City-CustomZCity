@@ -12,6 +12,24 @@ META.inventory = {
 }
 META.armors = {}
 
+local function ResolveInventoryContainer(ent)
+    if not IsValid(ent) then return nil end
+    if ent:IsRagdoll() then return ent end
+    if not ent:IsPlayer() then return ent end
+
+    local deathRagdoll = ent:GetNWEntity("RagdollDeath")
+    if IsValid(deathRagdoll) then
+        return deathRagdoll
+    end
+
+    return ent
+end
+
+local function SnapshotWeaponInfo(wep)
+    if not IsValid(wep) then return true end
+    return wep.GetInfo and wep:GetInfo() or true
+end
+
 function hg.CreateInv(ply)
     ply.inventory = {}
     local inv = ply.inventory
@@ -40,27 +58,12 @@ function hg.RenewInv(ply, isDead)
 
     for i, wep in pairs(ply:GetWeapons()) do
         if blackList[wep:GetClass()] then continue end
+        local weaponClass = wep:GetClass()
         if not isDead then
-            inv.Weapons[wep:GetClass()] = wep--wep.GetInfo and wep:GetInfo() or true
+            inv.Weapons[weaponClass] = wep--wep.GetInfo and wep:GetInfo() or true
         else
-            ply.nohook = true
-            ply:DropWeapon(wep)
-
-            wep:SetNoDraw(true)
-            wep:DrawShadow(false)
-            wep:AddSolidFlags(FSOLID_NOT_SOLID)
-
-            local rag = ply:GetNWEntity("RagdollDeath")
-
-            if IsValid(rag) then
-                wep:SetPos(rag:GetPos() + vector_up * - 10000)
-                wep:SetParent(rag, 0)
-            else
-                wep:SetPos(ply:GetPos())
-                wep:SetParent(ply, 0)
-            end
-
-            inv.Weapons[wep:GetClass()] = wep
+            inv.Weapons[weaponClass] = SnapshotWeaponInfo(wep)
+            ply:StripWeapon(weaponClass)
         end
     end
 
@@ -370,7 +373,15 @@ local functions = {
     ["Attachments"] = function(ply, ent, att)
         att = tonumber(att)
         if not ent.inventory.Attachments[att] then return end
-        ply.inventory.Attachments[#ply.inventory.Attachments + 1] = ent.inventory.Attachments[att]
+        local attKey = ent.inventory.Attachments[att]
+        if ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive() and ZSCAV.GrantAttachmentResource then
+            local ok = ZSCAV:GrantAttachmentResource(ply, attKey, {
+                allowDuplicate = true,
+            })
+            if not ok then return end
+        else
+            ply.inventory.Attachments[#ply.inventory.Attachments + 1] = attKey
+        end
         ent.inventory.Attachments[att] = nil
     end,
     -- ["Money"] = function(ply, ent)
@@ -388,7 +399,7 @@ net.Receive("ply_take_item", function(len, ply)
     local tblIndex = net.ReadString()
     local thing = net.ReadString()
     local tbl = net.ReadTable()
-    local ent = net.ReadEntity()
+    local ent = ResolveInventoryContainer(net.ReadEntity())
     
     if !IsValid(ent) or !IsValid(ply) then return end
     if ent:IsPlayer() and not IsValid(ent.FakeRagdoll) then return end
@@ -405,8 +416,15 @@ end)
 util.AddNetworkString("should_open_inv")
 local playerMeta = FindMetaTable("Player")
 function playerMeta:OpenInventory(ent)
+	ent = ResolveInventoryContainer(ent)
+	if not IsValid(ent) then return end
     hook.Run("ZB_InventoryOpened",self,ent)
-    if not IsValid(ent) then return end
+    if ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive() and ZSCAV.OpenCorpseLootForPlayer then
+        if ZSCAV:OpenCorpseLootForPlayer(self, ent) then
+            self.cooldown_takeitem = CurTime() + 0.5
+            return
+        end
+    end
     if ent:IsPlayer() and not IsValid(ent.FakeRagdoll) then return end
     if ent:IsPlayer() then hg.RenewInv(ent) end
     if self:IsPlayer() then hg.RenewInv(self) end
@@ -433,7 +451,16 @@ hook.Add("Player Think", "loot-fellows",function(ply)
     ply.keypressed = ply.keypressed or false
     --if not ply:GetLookTrace() then return end
 
-    local use = IsValid(ply.FakeRagdoll) and (ply:KeyDown(IN_WALK) and ply:KeyDown(IN_SPEED) and not ply:KeyDown(IN_ATTACK) and not ply:KeyDown(IN_ATTACK2)) or (not IsValid(ply.FakeRagdoll) and (ply:KeyDown(IN_ATTACK2) and ply:KeyDown(IN_USE)))
+    local zscavActive = ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive()
+    local use = false
+
+    if IsValid(ply.FakeRagdoll) then
+        use = ply:KeyDown(IN_WALK) and ply:KeyDown(IN_SPEED) and not ply:KeyDown(IN_ATTACK) and not ply:KeyDown(IN_ATTACK2)
+    elseif zscavActive then
+        use = ply:KeyDown(IN_ATTACK2) and ply:KeyDown(IN_USE)
+    else
+        use = ply:KeyDown(IN_ATTACK2) and ply:KeyDown(IN_USE)
+    end
     
     if use then
         local trace = hg.eyeTrace(ply, 60)
@@ -441,6 +468,7 @@ hook.Add("Player Think", "loot-fellows",function(ply)
         if not trace then return end
         local ent = trace.Entity
         ent = IsValid(hg.RagdollOwner(ent)) and hg.RagdollOwner(ent) or ent
+        ent = ResolveInventoryContainer(ent)
 		local _ply, _ent, canloot = hook.Run("ZB_CanLootInventory", ply, ent, canloot)
 		if canloot ~= nil and canloot == false then
 			ply.keypressed = true
@@ -448,6 +476,14 @@ hook.Add("Player Think", "loot-fellows",function(ply)
 		end
     
         hook.Run("ZB_InventoryChecked", ply, ent)
+
+        if not ply.keypressed and ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive() and ZSCAV.OpenCorpseLootForPlayer then
+            if ZSCAV:OpenCorpseLootForPlayer(ply, ent) then
+                ply.cooldown_takeitem = CurTime() + 0.5
+                ply.keypressed = true
+                return
+            end
+        end
         
         if not IsValid(ent) or not ent:GetNetVar("Inventory") then return end
         

@@ -4,7 +4,7 @@ hg.achievements.achievements_data.player_achievements = hg.achievements.achievem
 hg.achievements.achievements_data.created_achevements = {}
 
 local function updatePlayer(ply)
-    local name = ply:Name()
+    local name = ZC_GetSteamName and ZC_GetSteamName(ply) or ply:Name()
 	local steamID64 = ply:SteamID64()
 
     if not hg.achievements.SqlActive then
@@ -69,7 +69,7 @@ end)
 function hg.achievements.SaveToSQL(ply, data)
     if not hg.achievements.SqlActive then return end
 
-    local name = ply:Name()
+    local name = ZC_GetSteamName and ZC_GetSteamName(ply) or ply:Name()
 	local steamID64 = ply:SteamID64()
     local updateQuery = mysql:Update("hg_achievements")
         updateQuery:Update("achievements", util.TableToJSON(data or hg.achievements.GetPlayerAchievements(ply) or {}) )

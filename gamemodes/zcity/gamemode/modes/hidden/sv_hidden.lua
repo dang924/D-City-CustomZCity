@@ -4,9 +4,12 @@ util.AddNetworkString("hidden_start")
 util.AddNetworkString("hidden_roundend")
 util.AddNetworkString("hidden_ready_toggle")
 util.AddNetworkString("hidden_ready_sync")
+util.AddNetworkString("hidden_extract_sync")
+util.AddNetworkString("hidden_extract_ping")
 
 local HIDDEN_PREP_SYNC_TIMER = "ZBHiddenPrepSync"
 local HIDDEN_PREP_END_TIMER = "ZBHiddenPrepEnd"
+local HIDDEN_INTEL_SPAWN_TIMER = "ZBHiddenIntelSpawn"
 local hiddenReadyBySteamID64 = {}
 
 local function clearHiddenReadyStatus()
@@ -108,6 +111,44 @@ local function getRoundCandidatePlayers()
     return players
 end
 
+local function clearHiddenVipFlags()
+    for _, ply in player.Iterator() do
+        if not IsValid(ply) then continue end
+        ply.HiddenIsVIP = false
+    end
+end
+
+local function assignHiddenVipForRound(mode, players)
+    if not mode then return nil end
+
+    clearHiddenVipFlags()
+    mode.HiddenVipSteamID64 = nil
+    mode.HiddenVipDied = false
+
+    local irisCandidates = {}
+
+    for _, ply in ipairs(players or {}) do
+        if not IsValid(ply) then continue end
+        if ply:Team() != 1 then continue end
+        irisCandidates[#irisCandidates + 1] = ply
+    end
+
+    if not mode.HiddenUseVip then
+        return nil
+    end
+
+    if #irisCandidates <= 0 then
+        return nil
+    end
+
+    local chosen = irisCandidates[math.random(1, #irisCandidates)]
+    if not IsValid(chosen) then return nil end
+
+    chosen.HiddenIsVIP = true
+    mode.HiddenVipSteamID64 = chosen:SteamID64()
+    return chosen
+end
+
 local function getTeamAlive(teamId)
     local players = {}
 
@@ -119,6 +160,201 @@ local function getTeamAlive(teamId)
     end
 
     return players
+end
+
+local function getHiddenMajority(count)
+    count = math.max(math.floor(tonumber(count) or 0), 0)
+    if count <= 0 then return 0 end
+    return math.floor(count / 2) + 1
+end
+
+local function getHiddenExtractionPoints()
+    return zb.TranslatePointsToVectors(zb.GetMapPoints("HDN_EXTRACT"))
+end
+
+local function getHiddenExtractionRadius(mode)
+    local cfg = mode and mode.HiddenConfig or nil
+    return math.max(tonumber(cfg and cfg.ExtractRadius) or 220, 64)
+end
+
+local function getHiddenIntelPoints()
+    return zb.TranslatePointsToVectors(zb.GetMapPoints("HDN_INTEL"))
+end
+
+local function getHiddenIntelSpawnDelay(mode)
+    local cfg = mode and mode.HiddenConfig or nil
+    return math.max(tonumber(cfg and cfg.IntelSpawnDelay) or 60, 1)
+end
+
+local function countIrisInsideExtraction(mode, irisAlive)
+    if not mode or not isvector(mode.HiddenExtractionPoint) then return 0 end
+
+    local radius = getHiddenExtractionRadius(mode)
+    local radiusSqr = radius * radius
+    local count = 0
+
+    for _, ply in ipairs(irisAlive or {}) do
+        if not IsValid(ply) then continue end
+        if ply:GetPos():DistToSqr(mode.HiddenExtractionPoint) <= radiusSqr then
+            count = count + 1
+        end
+    end
+
+    return count
+end
+
+local function getHiddenVipPlayer(mode)
+    if not mode then return nil end
+    local vipSteamID64 = mode.HiddenVipSteamID64
+    if not vipSteamID64 or vipSteamID64 == "" then return nil end
+
+    for _, ply in player.Iterator() do
+        if not IsValid(ply) then continue end
+        if ply:Team() != 1 then continue end
+        if ply:SteamID64() == vipSteamID64 then
+            return ply
+        end
+    end
+end
+
+local function isVipInsideExtraction(mode, vip)
+    if not mode or not isvector(mode.HiddenExtractionPoint) then return false end
+    if not IsValid(vip) then return false end
+    if not vip:Alive() then return false end
+
+    local radius = getHiddenExtractionRadius(mode)
+    local radiusSqr = radius * radius
+    return vip:GetPos():DistToSqr(mode.HiddenExtractionPoint) <= radiusSqr
+end
+
+local function isVipCarryingIntel(mode, vip)
+    if not mode or not IsValid(vip) then return false end
+
+    local intel = mode.HiddenIntelEntity
+    if not IsValid(intel) then return false end
+
+    return vip:GetNetVar("carryent") == intel or vip:GetNetVar("carryent2") == intel
+end
+
+local function cleanupHiddenIntelEntity(mode)
+    if not mode then return end
+    if IsValid(mode.HiddenIntelEntity) then
+        mode.HiddenIntelEntity:Remove()
+    end
+
+    mode.HiddenIntelEntity = nil
+    mode.HiddenIntelSpawned = false
+    mode.HiddenVipHasIntel = false
+end
+
+local function spawnHiddenIntelBriefcase(mode)
+    if not mode then return false end
+    if not mode.HiddenIntelRequired then return false end
+    if IsValid(mode.HiddenIntelEntity) then return true end
+
+    local points = getHiddenIntelPoints()
+    if #points <= 0 then
+        mode.HiddenExtractionEligible = false
+
+        if not mode.HiddenExtractionWarningSent then
+            mode.HiddenExtractionWarningSent = true
+            PrintMessage(HUD_PRINTTALK, "[HIDDEN] Intel objective failed: no HDN_INTEL points available.")
+            PrintMessage(HUD_PRINTTALK, "[HIDDEN] Kill Subject 617 before timer runs out or IRIS will lose.")
+        end
+        return false
+    end
+
+    local spawnPos = points[math.random(#points)]
+    local intel = ents.Create("prop_physics")
+    if not IsValid(intel) then return false end
+
+    intel:SetModel("models/props_c17/BriefCase001a.mdl")
+    intel:SetPos(spawnPos + Vector(0, 0, 16))
+    intel:SetAngles(Angle(0, math.random(0, 359), 0))
+    intel:Spawn()
+    intel:Activate()
+    intel.HiddenIntelObjective = true
+
+    local phys = intel:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:Wake()
+    end
+
+    mode.HiddenIntelEntity = intel
+    mode.HiddenIntelSpawned = true
+
+    PrintMessage(HUD_PRINTTALK, "[HIDDEN] Intel briefcase has spawned at HDN_INTEL. VIP must carry it to extraction.")
+    return true
+end
+
+local function syncHiddenExtractionState(mode, target)
+    if util.NetworkStringToID("hidden_extract_sync") == 0 then return end
+
+    local point = mode and mode.HiddenExtractionPoint
+    local hasPoint = isvector(point)
+
+    net.Start("hidden_extract_sync")
+    net.WriteBool(mode and mode.HiddenExtractionActive and true or false)
+    net.WriteBool(mode and mode.HiddenExtractionEligible ~= false or false)
+    net.WriteVector(hasPoint and point or vector_origin)
+    net.WriteUInt(math.Clamp(tonumber(mode and mode.HiddenExtractionRequired) or 0, 0, 255), 8)
+    net.WriteUInt(math.Clamp(tonumber(mode and mode.HiddenExtractionCurrent) or 0, 0, 255), 8)
+    net.WriteBool(mode and mode.HiddenUseVip and true or false)
+    net.WriteBool(mode and mode.HiddenIntelRequired and true or false)
+    net.WriteBool(mode and mode.HiddenVipAtExtraction and true or false)
+    net.WriteBool(mode and mode.HiddenVipHasIntel and true or false)
+
+    if IsValid(target) then
+        net.Send(target)
+    else
+        net.Broadcast()
+    end
+end
+
+local function pingHiddenExtractionPoint(mode)
+    if util.NetworkStringToID("hidden_extract_ping") == 0 then return end
+    if not mode or not isvector(mode.HiddenExtractionPoint) then return end
+
+    net.Start("hidden_extract_ping")
+    net.WriteVector(mode.HiddenExtractionPoint)
+    net.Broadcast()
+end
+
+local function beginHiddenExtraction(mode, irisAlive)
+    if not mode then return false end
+    if mode.HiddenExtractionActive then return true end
+
+    local points = getHiddenExtractionPoints()
+    if #points <= 0 then
+        mode.HiddenExtractionEligible = false
+        return false
+    end
+
+    mode.HiddenExtractionPoint = points[math.random(#points)]
+    mode.HiddenExtractionActive = true
+    mode.HiddenExtractionRequired = mode.HiddenUseVip and 1 or getHiddenMajority(#irisAlive)
+    mode.HiddenExtractionCurrent = mode.HiddenUseVip and 0 or countIrisInsideExtraction(mode, irisAlive)
+    mode.HiddenExtractionNextSync = CurTime() + 1
+    mode.HiddenVipAtExtraction = false
+    mode.HiddenVipHasIntel = false
+
+    local p = mode.HiddenExtractionPoint
+    PrintMessage(HUD_PRINTTALK, string.format("[HIDDEN] Extraction active at HDN_EXTRACT point (%.0f %.0f %.0f).", p.x, p.y, p.z))
+
+    if mode.HiddenUseVip then
+        if mode.HiddenIntelRequired then
+            PrintMessage(HUD_PRINTTALK, "[HIDDEN] IRIS VIP must extract while carrying the intel briefcase.")
+        else
+            PrintMessage(HUD_PRINTTALK, "[HIDDEN] IRIS VIP must reach extraction to win.")
+        end
+    else
+        PrintMessage(HUD_PRINTTALK, "[HIDDEN] Majority of living IRIS must reach extraction to win.")
+    end
+
+    syncHiddenExtractionState(mode)
+    pingHiddenExtractionPoint(mode)
+
+    return true
 end
 
 local function isHiddenRoundActive()
@@ -265,8 +501,15 @@ local function killSubject617ForRoundEnd(ply)
     if ply:Team() != 0 then return end
     if not ply:Alive() then return end
 
+    -- Only un-fake the player if a fake ragdoll is currently attached, otherwise
+    -- we can fall through to Kill() which drops the real ragdoll. Avoid spawning
+    -- a SECOND ragdoll when a fake one already exists — doubled ragdolls plus a
+    -- pending game.CleanUpMap() in Intermission has been a long-time engine
+    -- crash trigger.
     if hg and hg.FakeUp and IsValid(ply.FakeRagdoll) then
         hg.FakeUp(ply, true, true)
+        resetHiddenRoundPlayerState(ply)
+        return
     end
 
     if not ply:Alive() then return end
@@ -275,7 +518,7 @@ local function killSubject617ForRoundEnd(ply)
     ply:SetNoTarget(false)
     ply:SetRenderMode(RENDERMODE_NORMAL)
     ply:SetColor(color_white)
-    ply:Kill() -- Kill() drops a visible ragdoll; KillSilent() suppresses it
+    ply:KillSilent() -- KillSilent avoids a visible ragdoll that would be force-removed by CleanUpMap a few seconds later
 end
 
 local function applyHiddenLeapImpactProtection(mode, ply)
@@ -378,6 +621,15 @@ local function startHiddenCombat(mode)
 
     mode.HiddenCombatStarted = true
     mode.HiddenCombatStartedAt = combatStart
+    mode.HiddenCombatEndsAt = combatStart + combatDuration
+    mode.HiddenExtractionActive = false
+    mode.HiddenExtractionEligible = true
+    mode.HiddenExtractionPoint = nil
+    mode.HiddenExtractionRequired = 0
+    mode.HiddenExtractionCurrent = 0
+    mode.HiddenExtractionWarningSent = false
+    mode.HiddenExtractionNextSync = 0
+    mode.HiddenIrisStartingCount = 0
 
     for _, ply in player.Iterator() do
         if not IsValid(ply) then continue end
@@ -410,6 +662,17 @@ local function startHiddenCombat(mode)
         forceHiddenTeamSpawnPosition(ply)
         mode:ApplyHiddenCombatEquipment(ply)
     end
+
+    local irisStartingCount = 0
+    for _, ply in player.Iterator() do
+        if not IsValid(ply) then continue end
+        if ply:Team() != 1 then continue end
+        if ply:Team() == TEAM_SPECTATOR then continue end
+        irisStartingCount = irisStartingCount + 1
+    end
+    mode.HiddenIrisStartingCount = irisStartingCount
+
+    syncHiddenExtractionState(mode)
 
 end
 
@@ -518,7 +781,37 @@ function MODE:PickHiddenPlayer(players, previousHiddenSteamID64)
     return pick.ply, pick.index
 end
 
+-- Drop networked entity references and detach players from spectate/ragdoll state
+-- BEFORE game.CleanUpMap() so cleanup doesn't tear down entities the player is
+-- still bound to (one of the most common engine-crash paths on Hidden round
+-- restart, since IRIS players sit in OBS_MODE_NONE + MOVETYPE_NONE during prep).
+local function prepareHiddenPlayersForCleanup()
+    for _, ply in player.Iterator() do
+        if not IsValid(ply) then continue end
+
+        clearIrisPrepSpectatorArtifacts(ply)
+        ply.HiddenPrepHoldingPos = nil
+        ply.HiddenCombatEquipPending = nil
+
+        if ply:GetObserverMode() ~= OBS_MODE_NONE or ply.viewmode == 0 then
+            pcall(function() ply:UnSpectate() end)
+        end
+
+        if ply:GetMoveType() == MOVETYPE_NONE then
+            pcall(function() ply:SetMoveType(MOVETYPE_WALK) end)
+        end
+
+        -- Drop any lingering ragdoll the engine might double-free during CleanUpMap.
+        if IsValid(ply.FakeRagdoll) then ply.FakeRagdoll:Remove() end
+        if IsValid(ply.RagdollDeath) then ply.RagdollDeath:Remove() end
+        ply.FakeRagdoll = nil
+        ply.RagdollDeath = nil
+    end
+end
+
 function MODE:Intermission()
+    prepareHiddenPlayersForCleanup()
+
     game.CleanUpMap()
 
     clearHiddenReadyStatus()
@@ -534,38 +827,58 @@ function MODE:Intermission()
     local hiddenAssigned = false
 
     self.HiddenSteamID64 = IsValid(hidden) and hidden:SteamID64() or nil
+    self.HiddenVipSteamID64 = nil
+    self.HiddenVipDied = false
+    self.HiddenRoundPlayerCount = #players
+    self.HiddenUseVip = self.HiddenRoundPlayerCount > 5
+    self.HiddenIntelRequired = self.HiddenRoundPlayerCount > 10
+    self.HiddenIntelSpawned = false
+    self.HiddenIntelEntity = nil
+    self.HiddenVipAtExtraction = false
+    self.HiddenVipHasIntel = false
     self.RoundWinner = nil
     self.RoundWinnerText = nil
 
     -- Hidden mode manages spawning itself; suppress the base PlayerSelectSpawn
     -- during SetupTeam calls to prevent a crash when no zb spawn points are registered.
+    -- pcall every SetupTeam so an error in one player can't leave PlayerSelectSpawn
+    -- permanently nil-functioned (which would silently spawn future players at the
+    -- world origin and crash any weapon SWEP that initializes off the player pos).
     local _savedPSS = PlayerSelectSpawn
     PlayerSelectSpawn = function() end
 
-    for index, ply in ipairs(players) do
-        if not IsValid(ply) then continue end
-
-        local teamId = (hiddenIndex and index == hiddenIndex) and 0 or 1
-        ply:SetupTeam(teamId)
-
-        if teamId == 0 then
-            hiddenAssigned = true
-            self.HiddenSteamID64 = ply:SteamID64()
-        end
-    end
-
-    if not hiddenAssigned then
-        for _, ply in ipairs(players) do
+    local ok, err = pcall(function()
+        for index, ply in ipairs(players) do
             if not IsValid(ply) then continue end
 
-            ply:SetupTeam(0)
-            hiddenAssigned = true
-            self.HiddenSteamID64 = ply:SteamID64()
-            break
+            local teamId = (hiddenIndex and index == hiddenIndex) and 0 or 1
+            ply:SetupTeam(teamId)
+
+            if teamId == 0 then
+                hiddenAssigned = true
+                self.HiddenSteamID64 = ply:SteamID64()
+            end
         end
-    end
+
+        if not hiddenAssigned then
+            for _, ply in ipairs(players) do
+                if not IsValid(ply) then continue end
+
+                ply:SetupTeam(0)
+                hiddenAssigned = true
+                self.HiddenSteamID64 = ply:SteamID64()
+                break
+            end
+        end
+    end)
 
     PlayerSelectSpawn = _savedPSS
+
+    if not ok then
+        ErrorNoHaltWithStack("[Hidden] Intermission SetupTeam failed: " .. tostring(err) .. "\n")
+    end
+
+    assignHiddenVipForRound(self, players)
 
     net.Start("hidden_start")
     net.Broadcast()
@@ -580,13 +893,19 @@ end
 
 function MODE:ShouldRoundEnd()
     -- Never end the round during prep; IRIS are intentionally dead/spectating.
-    if isHiddenPrepActive(self) then return nil end
+    if isHiddenPrepActive(self) then return false end
 
     -- Don't end before combat has actually started (covers the prep->combat transition frame).
-    if not self.HiddenCombatStarted then return nil end
+    if not self.HiddenCombatStarted then return false end
 
     -- Give IRIS 3 seconds to fully spawn before counting them as dead.
-    if CurTime() < (self.HiddenCombatStartedAt or 0) + 3 then return nil end
+    if CurTime() < (self.HiddenCombatStartedAt or 0) + 3 then return false end
+
+    if self.HiddenUseVip and self.HiddenVipDied then
+        self.RoundWinner = 0
+        self.RoundWinnerText = "Subject 617 eliminated the VIP."
+        return true
+    end
 
     local hiddenAlive = getTeamAlive(0)
     local irisAlive = getTeamAlive(1)
@@ -603,20 +922,115 @@ function MODE:ShouldRoundEnd()
         return true
     end
 
-    return nil
+    if not self.HiddenUseVip then
+        local combatEndAt = tonumber(self.HiddenCombatEndsAt) or ((self.HiddenCombatStartedAt or CurTime()) + math.max(tonumber(self.HiddenConfig and self.HiddenConfig.CombatDuration) or 240, 1))
+        if CurTime() >= combatEndAt then
+            self.RoundWinner = 1
+            self.RoundWinnerText = "Time expired. IRIS survived Subject 617."
+            return true
+        end
+
+        return false
+    end
+
+    if not self.HiddenExtractionActive then
+        local startCount = math.max(tonumber(self.HiddenIrisStartingCount) or 0, 0)
+        if self.HiddenExtractionEligible ~= false and startCount > 0 then
+            local minAliveForExtraction = getHiddenMajority(startCount)
+            if #irisAlive < minAliveForExtraction then
+                self.HiddenExtractionEligible = false
+                if not self.HiddenExtractionWarningSent then
+                    self.HiddenExtractionWarningSent = true
+                    PrintMessage(HUD_PRINTTALK, "[HIDDEN] Extraction is no longer available: IRIS losses exceeded majority.")
+                    PrintMessage(HUD_PRINTTALK, "[HIDDEN] Kill Subject 617 before timer runs out or IRIS will lose.")
+                end
+                syncHiddenExtractionState(self)
+            end
+        end
+
+        local combatEndAt = tonumber(self.HiddenCombatEndsAt) or ((self.HiddenCombatStartedAt or CurTime()) + math.max(tonumber(self.HiddenConfig and self.HiddenConfig.CombatDuration) or 240, 1))
+        if CurTime() >= combatEndAt then
+            if self.HiddenExtractionEligible == false then
+                self.RoundWinner = 0
+                self.RoundWinnerText = "Time expired. IRIS failed to eliminate Subject 617."
+                return true
+            end
+
+            if not beginHiddenExtraction(self, irisAlive) then
+                self.RoundWinner = 0
+                self.RoundWinnerText = "Time expired. No HDN_EXTRACT points available; Subject 617 wins."
+                return true
+            end
+
+            return false
+        end
+
+        return false
+    end
+
+    local vip = getHiddenVipPlayer(self)
+    local vipAtExtraction = isVipInsideExtraction(self, vip)
+    local vipHasIntel = self.HiddenIntelRequired and isVipCarryingIntel(self, vip) or false
+
+    self.HiddenVipAtExtraction = vipAtExtraction
+    self.HiddenVipHasIntel = vipHasIntel
+    self.HiddenExtractionRequired = 1
+    self.HiddenExtractionCurrent = vipAtExtraction and 1 or 0
+
+    if CurTime() >= (self.HiddenExtractionNextSync or 0) then
+        self.HiddenExtractionNextSync = CurTime() + 1
+        syncHiddenExtractionState(self)
+    end
+
+    if vipAtExtraction then
+        if not self.HiddenIntelRequired then
+            self.RoundWinner = 1
+            self.RoundWinnerText = "IRIS VIP extracted successfully."
+            return true
+        end
+
+        if vipHasIntel then
+            self.RoundWinner = 1
+            self.RoundWinnerText = "IRIS VIP extracted with the intel briefcase."
+            return true
+        end
+    end
+
+    return false
 end
 
 function MODE:BoringRoundFunction()
-    self.RoundWinner = 1
-    self.RoundWinnerText = "Time expired. IRIS contained Subject 617."
+    -- Hidden now controls timeout transitions in ShouldRoundEnd.
 end
 
 function MODE:RoundStart()
     self.HiddenCombatStarted = false
     self.HiddenCombatStartedAt = 0
+    self.HiddenCombatEndsAt = 0
+    self.Hidden617WarnedMotion = false
+    self.Hidden617WarnedThermal = false
     self.HiddenPrepActive = false
+    self.HiddenVipDied = false
+    self.HiddenExtractionActive = false
+    self.HiddenExtractionEligible = true
+    self.HiddenExtractionPoint = nil
+    self.HiddenExtractionRequired = 0
+    self.HiddenExtractionCurrent = 0
+    self.HiddenExtractionWarningSent = false
+    self.HiddenExtractionNextSync = 0
+    self.HiddenIrisStartingCount = 0
+    self.HiddenRoundPlayerCount = math.max(tonumber(self.HiddenRoundPlayerCount) or 0, 0)
+    self.HiddenUseVip = self.HiddenRoundPlayerCount > 5
+    self.HiddenIntelRequired = self.HiddenRoundPlayerCount > 10
+    self.HiddenIntelSpawned = false
+    self.HiddenIntelEntity = nil
+    self.HiddenVipAtExtraction = false
+    self.HiddenVipHasIntel = false
+    timer.Remove(HIDDEN_INTEL_SPAWN_TIMER)
+    cleanupHiddenIntelEntity(self)
     clearHiddenReadyStatus()
     syncHiddenReadyStatus()
+    syncHiddenExtractionState(self)
 
     local prepDuration = self.HiddenConfig.PrepDuration or 60
     zb.ROUND_BEGIN = CurTime() + prepDuration
@@ -635,8 +1049,33 @@ function MODE:RoundStart()
     end
 
     if prepActive then
+        if self.HiddenUseVip and self.HiddenIntelRequired then
+            local intelSpawnDelay = getHiddenIntelSpawnDelay(self)
+            timer.Create(HIDDEN_INTEL_SPAWN_TIMER, intelSpawnDelay, 1, function()
+                local round = CurrentRound and CurrentRound()
+                if round != self then return end
+                if not isHiddenRoundActive() then return end
+                if not self.HiddenCombatStarted and not isHiddenPrepActive(self) then return end
+
+                spawnHiddenIntelBriefcase(self)
+                syncHiddenExtractionState(self)
+            end)
+        end
+
         beginHiddenPreparation(self)
         return
+    end
+
+    if self.HiddenUseVip and self.HiddenIntelRequired then
+        local intelSpawnDelay = getHiddenIntelSpawnDelay(self)
+        timer.Create(HIDDEN_INTEL_SPAWN_TIMER, intelSpawnDelay, 1, function()
+            local round = CurrentRound and CurrentRound()
+            if round != self then return end
+            if not isHiddenRoundActive() then return end
+
+            spawnHiddenIntelBriefcase(self)
+            syncHiddenExtractionState(self)
+        end)
     end
 
     startHiddenCombat(self)
@@ -674,8 +1113,17 @@ function MODE:GiveEquipment()
                     ply:SetNetVar("CurPluv", "pluvboss")
                     queueHiddenCombatEquipment(self, ply)
                 else
-                    ply:SetPlayerClass("swat")
-                    zb.GiveRole(ply, "IRIS Operative", Color(25, 110, 210))
+                    local isVip = self.HiddenUseVip and self.HiddenVipSteamID64 and ply:SteamID64() == self.HiddenVipSteamID64
+                    ply.HiddenIsVIP = isVip and true or false
+
+                    if isVip then
+                        ply:SetPlayerClass("hiddenvip")
+                        zb.GiveRole(ply, "IRIS VIP", Color(230, 205, 80))
+                    else
+                        ply:SetPlayerClass("swat")
+                        zb.GiveRole(ply, "IRIS Operative", Color(25, 110, 210))
+                    end
+
                     ply:SetNetVar("CurPluv", "pluvberet")
 
                     if self.EnsureHiddenSling then
@@ -776,6 +1224,8 @@ end
 function MODE:EndRound()
     self.HiddenPrepActive = false
     clearHiddenPrepTimers()
+    timer.Remove(HIDDEN_INTEL_SPAWN_TIMER)
+    cleanupHiddenIntelEntity(self)
     setHiddenPrepState(false)
     clearHiddenReadyStatus()
     syncHiddenReadyStatus()
@@ -789,8 +1239,19 @@ function MODE:EndRound()
 
     PrintMessage(HUD_PRINTTALK, winnerText)
 
-    for _, ply in player.Iterator() do
-        killSubject617ForRoundEnd(ply)
+    -- Only hard-kill Subject 617 when they lose so the body remains visible.
+    if winner == 1 then
+        for _, ply in player.Iterator() do
+            if not IsValid(ply) then continue end
+            if ply:Team() != 0 then continue end
+            if not ply:Alive() then continue end
+
+            resetHiddenRoundPlayerState(ply)
+            ply:SetNoTarget(false)
+            ply:SetRenderMode(RENDERMODE_NORMAL)
+            ply:SetColor(color_white)
+            ply:Kill()
+        end
     end
 
     timer.Simple(2, function()
@@ -826,6 +1287,12 @@ function MODE:PlayerDeath(ply)
             setIrisPrepSpectator(ply)
             queueHiddenLoadoutMenu(self, ply)
         end)
+    end
+
+    if self.HiddenUseVip and not isHiddenPrepActive(self) and self.HiddenCombatStarted and IsValid(ply) and ply:Team() == 1 then
+        if self.HiddenVipSteamID64 and ply:SteamID64() == self.HiddenVipSteamID64 then
+            self.HiddenVipDied = true
+        end
     end
 end
 

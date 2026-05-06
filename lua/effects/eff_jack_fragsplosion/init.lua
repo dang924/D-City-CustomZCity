@@ -1,4 +1,4 @@
-﻿local ShockWave = Material("sprites/mat_jack_shockwave_white")
+local ShockWave = Material("sprites/mat_jack_shockwave_white")
 function EFFECT:Init(data)
 	local vOffset = data:GetOrigin()
 	local Scayul = data:GetScale()

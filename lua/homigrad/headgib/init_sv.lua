@@ -1,18 +1,22 @@
 local net, hg, pairs, Vector, ents, IsValid, util = net, hg, pairs, Vector, ents, IsValid, util
 
 local vecZero = Vector(0,0,0)
-local vecInf = Vector(0,0,0) / 0
+-- vecInf removed: Vector(0,0,0)/0 creates NaN which can crash Havok physics engine
 
 local function removeBone(rag, bone, phys_bone, nohuys)
+	-- guard: invalid bone/phys_bone indices crash the engine
+	if not bone or bone < 0 then return end
+	if not phys_bone or phys_bone < 0 then return end
+
 	if !nohuys then rag:ManipulateBoneScale(bone, vecZero) end
-	--rag:ManipulateBonePosition(bone,vecInf) -- Thanks Rama (only works on certain graphics cards!)
+	--rag:ManipulateBonePosition(bone,vecInf) -- removed: caused NaN/SIGFPE
 
 	if rag.gibRemove[phys_bone] then return end
 
 	local phys_obj = rag:GetPhysicsObjectNum(phys_bone)
+	if not IsValid(phys_obj) then return end
 	phys_obj:EnableCollisions(false)
 	phys_obj:SetMass(0.1)
-	--rag:RemoveInternalConstraint(phys_bone)
 
 	constraint.RemoveAll(phys_obj)
 	rag.gibRemove[phys_bone] = phys_obj
@@ -132,6 +136,9 @@ for _, snd in ipairs(sounds) do
 end
 function Gib_Input(rag, bone, force)
 	if not IsValid(rag) then return end
+	-- bone == -1 means LookupBone failed (model has no ValveBiped skeleton)
+	-- Passing -1 to GetPhysicsObjectNum crashes the engine with SIGFPE
+	if not bone or bone < 0 then return end
 	
 	local gibRemove = rag.gibRemove
 
@@ -143,7 +150,9 @@ function Gib_Input(rag, bone, force)
 	end
 
 	local phys_bone = rag:TranslateBoneToPhysBone(bone)
+	if not phys_bone or phys_bone < 0 then return end
 	local phys_obj = rag:GetPhysicsObjectNum(phys_bone)
+	if not IsValid(phys_obj) then return end
 	
 	if (not gibRemove[phys_bone]) and (bone == rag:LookupBone("ValveBiped.Bip01_Head1")) then
 		--sound.Emit(rag,"player/headshot" .. math.random(1, 2) .. ".wav")
@@ -155,11 +164,20 @@ function Gib_Input(rag, bone, force)
 		Gib_RemoveBone(rag, bone, phys_bone)
 		
 		--rag:ManipulateBoneScale(rag:LookupBone("ValveBiped.Bip01_Neck1"),vecZero)
-		rag:ManipulateBonePosition(rag:LookupBone("ValveBiped.Bip01_Neck1"),Vector(-1,0,0))
+		local neckBone = rag:LookupBone("ValveBiped.Bip01_Neck1")
+		if neckBone and neckBone >= 0 then
+			rag:ManipulateBonePosition(neckBone, Vector(-1,0,0))
+		end
 
 		local ent = ents_Create("prop_dynamic")
 		ent:SetModel(headboom_mdl)
 		local att = rag:GetAttachment(3)
+		if not att then
+			print("[HeadGib] WARNING: model has no attachment 3, skipping head gib visuals")
+			rag.noHead = true
+			rag:SetNWString("PlayerName", "Beheaded body")
+			return
+		end
 		local pos, ang = LocalToWorld(ThatPlyIsFemale(rag) and headpos_female or headpos_male, headang, att.Pos, att.Ang)
 		ent:SetPos(pos)
 		ent:SetAngles(ang)

@@ -204,6 +204,22 @@ local function HandleGrant(len, ply)
     -- Validate key is in our list
     if not IsValidAttachmentKey(attKey) then return end
 
+    if ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive() and ZSCAV.GrantAttachmentResource then
+        local ok, reason = ZSCAV:GrantAttachmentResource(ply, attKey, {
+            allowDuplicate = false,
+        })
+        if ok then
+            ply:ChatPrint("[Attachments] Unlocked — equip it from your weapon's attachment menu.")
+        elseif reason == "duplicate" then
+            ply:ChatPrint("[Attachments] You already have that attachment.")
+        elseif reason == "space" or reason == "weight" then
+            ply:ChatPrint("[Attachments] No room for that attachment in your inventory.")
+        else
+            ply:ChatPrint("[Attachments] Could not grant that attachment.")
+        end
+        return
+    end
+
     local inv = ply:GetNetVar("Inventory", {})
     inv.Attachments = inv.Attachments or {}
 

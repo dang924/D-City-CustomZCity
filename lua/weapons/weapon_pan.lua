@@ -1,4 +1,4 @@
-﻿if SERVER then AddCSLuaFile() end
+if SERVER then AddCSLuaFile() end
 SWEP.Base = "weapon_melee"
 SWEP.PrintName = "Pan"
 SWEP.Instructions = "A cast iron cooking pan that can pack a deadly punch. Can't protect from bullets.\n\nLMB to attack.\nRMB to block."

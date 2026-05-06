@@ -243,6 +243,10 @@ function CLASS.On(self, data)
         appearance = hg.Appearance.GetRandomAppearance()
         mdl_key = appearance.AModel
     end
+    -- Final fallback: appearance mods may add model keys not in rebel_models
+    if not rebel_models[mdl_key] then
+        mdl_key = "Male 01"
+    end
 
     self:SetPlayerColor(Color(13,101,5):ToVector())
     self:SetModel(rebel_models[mdl_key])

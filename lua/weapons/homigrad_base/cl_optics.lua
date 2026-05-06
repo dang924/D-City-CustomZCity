@@ -303,6 +303,11 @@ hook.Add("PreDrawHalos", "HG_ThermalScopeSilhouettes", function()
 			if ent:Team() == TEAM_SPECTATOR then continue end
 			if not ent:Alive() then continue end
 
+			local wep = ent:GetActiveWeapon()
+			if IsValid(wep) then
+				tryAdd(wep)
+			end
+
 			-- Ragdolled-but-alive players (downed via hg.FakeUp, Subject 617 leap,
 			-- etc.) hide the player entity and route their visible body through
 			-- ply.FakeRagdoll. The player entity stays at the ragdoll's position
@@ -319,6 +324,11 @@ hook.Add("PreDrawHalos", "HG_ThermalScopeSilhouettes", function()
 				tryAdd(ent)
 			end
 		elseif ent:IsNPC() or ent:IsNextBot() then
+			local wep = ent:GetActiveWeapon()
+			if IsValid(wep) then
+				tryAdd(wep)
+			end
+
 			local fake = ent.FakeRagdoll
 			if IsValid(fake) then
 				tryAdd(fake)

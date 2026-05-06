@@ -13,6 +13,10 @@ zb.Points.RandomSpawns = zb.Points.RandomSpawns or {}
 zb.Points.RandomSpawns.Color = Color(122,122,0)
 zb.Points.RandomSpawns.Name = "RandomSpawns"
 
+zb.Points.EVENT_SPAWN = zb.Points.EVENT_SPAWN or {}
+zb.Points.EVENT_SPAWN.Color = Color(255, 120, 20)
+zb.Points.EVENT_SPAWN.Name = "EVENT_SPAWN"
+
 if SERVER then
     util.AddNetworkString("zb_getallpoints")
     util.AddNetworkString("zb_getspecificpoints")

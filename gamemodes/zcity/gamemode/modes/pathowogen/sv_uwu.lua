@@ -442,9 +442,9 @@ function MODE:BroadcastContractor(text)
 end
 
 local DeltaGuns = {
-	[0] = "weapon_m16a2",
-	[1] = "weapon_m16a2",
-	[2] = "weapon_m16a2",
+	[0] = "weapon_m4a1",
+	[1] = "weapon_m4a1",
+	[2] = "weapon_m4a1",
 	[3] = "weapon_spas12",
 	[4] = "weapon_m60"
 }
@@ -716,7 +716,6 @@ MODE.LootTable = {
 		{7,"weapon_revolver2"},
 		--{6,"weapon_revolver357"},
 		{6,"weapon_deagle"},
-		{6,"weapon_colt9mm"},
 		{5,"weapon_doublebarrel_short"},
 		--{7,"ent_armor_vest6"},
 		{5,"ent_armor_vest7"},
@@ -754,7 +753,7 @@ MODE.LootTable = {
 		{4,"weapon_hg_pipebomb_tpik"},
 
 		{3,"weapon_kar98"},
-		{3,"weapon_ar_pistol"},
+		{3,"weapon_m4a1"},
 		{3,"weapon_draco"},
 		{3,"weapon_mp5"},
 		--{3,"weapon_xm1014"},
@@ -767,7 +766,7 @@ MODE.LootTable = {
 
 		{2,"weapon_mp7"},
 		{2,"weapon_sks"},
-		{2,"weapon_ar15"},
+		{2,"weapon_m4a1"},
 
 		{2,"ent_armor_vest4"},
 

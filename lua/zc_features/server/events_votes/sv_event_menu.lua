@@ -15,6 +15,16 @@ local function EventLog(msg)
     print("[ZC EventMenu] " .. tostring(msg))
 end
 
+local function LogPlayer(ply)
+    if not IsValid(ply) then
+        return "Console[server]"
+    end
+
+    local nick = tostring((ply.Nick and ply:Nick()) or "unknown")
+    local sid64 = tostring((ply.SteamID64 and ply:SteamID64()) or "unknown")
+    return nick .. "[" .. sid64 .. "]"
+end
+
 -- ── Default loadout presets ───────────────────────────────────────────────────
 -- These ship with the addon. Superadmins can override/extend them in-game.
 -- In-game changes are written to data/zc_event_loadouts.json and take
@@ -179,6 +189,13 @@ util.AddNetworkString("ZC_EventMenu_OpenRebelLoadoutEditor") -- server → clien
 
 ZC_EventRunning = ZC_EventRunning or false  -- kept for backwards compat
 ZC_EventState   = ZC_EventState   or 0      -- 0/1/2
+
+local function IsEventRoundActive()
+    if not CurrentRound then return false end
+
+    local ok, round = pcall(CurrentRound)
+    return ok and istable(round) and round.name == "event"
+end
 
 local function BroadcastEventState()
     net.Start("ZC_EventMenu_EventState")
@@ -367,7 +384,7 @@ local function SetClassInPlace(ply, class)
                     applyWithRetry(attempt + 1)
                 end)
             else
-                print("[ZC EventMenu] WARNING: class '" .. tostring(canonical) .. "' is not registered for " .. tostring(ply:Nick()))
+                print("[ZC EventMenu] WARNING: class '" .. tostring(canonical) .. "' is not registered for " .. LogPlayer(ply))
             end
             return
         end
@@ -792,7 +809,7 @@ net.Receive("ZC_EventMenu_ClassEdit", function(len, admin)
         table.insert(ZC_EventClasses, arg)
         SaveClasses()
         PushClassListToAdmins()
-        EventLog(admin:Nick() .. " added class to event menu: " .. arg)
+        EventLog(LogPlayer(admin) .. " added class to event menu: " .. arg)
 
     elseif op == "remove" then
         local idx = tonumber(arg)
@@ -801,7 +818,7 @@ net.Receive("ZC_EventMenu_ClassEdit", function(len, admin)
         table.remove(ZC_EventClasses, idx)
         SaveClasses()
         PushClassListToAdmins()
-        EventLog(admin:Nick() .. " removed class from event menu: " .. removed)
+        EventLog(LogPlayer(admin) .. " removed class from event menu: " .. removed)
     end
 end)
 
@@ -831,7 +848,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
         SetClassInPlace(target, arg)
         target:ChatPrint("[Event] Your class has been set to: " .. arg)
         Feedback(admin, target:Nick() .. " → class: " .. arg)
-        EventLog(admin:Nick() .. " set class of " .. target:Nick() .. " to " .. arg)
+        EventLog(LogPlayer(admin) .. " set class of " .. LogPlayer(target) .. " to " .. arg)
 
     elseif action == "loadout" then
         if not IsValid(target) then Feedback(admin, "Player not found."); return end
@@ -841,7 +858,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
         end
         target:ChatPrint("[Event] You received loadout: " .. arg)
         Feedback(admin, target:Nick() .. " → loadout: " .. arg)
-        EventLog(admin:Nick() .. " gave loadout '" .. arg .. "' to " .. target:Nick())
+        EventLog(LogPlayer(admin) .. " gave loadout '" .. arg .. "' to " .. LogPlayer(target))
 
     elseif action == "loadout_all" then
         -- arg = preset name; applies to all non-spectator non-bot players
@@ -855,7 +872,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
             end
         end
         PrintMessage(HUD_PRINTTALK, "[Event] Loadout '" .. arg .. "' given to " .. count .. " players by " .. admin:Nick())
-        EventLog(admin:Nick() .. " gave loadout '" .. arg .. "' to all (" .. count .. ")")
+        EventLog(LogPlayer(admin) .. " gave loadout '" .. arg .. "' to all (" .. count .. ")")
 
     elseif action == "loadout_team" then
         -- arg = "TeamName|PresetName"
@@ -873,14 +890,14 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
             end
         end
         Feedback(admin, "Loadout '" .. presetName .. "' → Team " .. teamName .. " (" .. count .. " players)")
-        EventLog(admin:Nick() .. " gave loadout '" .. presetName .. "' to Team " .. teamName .. " (" .. count .. ")")
+        EventLog(LogPlayer(admin) .. " gave loadout '" .. presetName .. "' to Team " .. teamName .. " (" .. count .. ")")
 
     elseif action == "setrole" then
         if not IsValid(target) then Feedback(admin, "Player not found."); return end
         zb.GiveRole(target, arg, Color(190, 15, 15))
         target:ChatPrint("[Event] Your role has been set to: " .. arg)
         Feedback(admin, target:Nick() .. " → role: " .. arg)
-        EventLog(admin:Nick() .. " set role of " .. target:Nick() .. " to " .. arg)
+        EventLog(LogPlayer(admin) .. " set role of " .. LogPlayer(target) .. " to " .. arg)
 
     elseif action == "healplayer" then
         if not IsValid(target) then Feedback(admin, "Player not found."); return end
@@ -890,7 +907,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
         end
         target:ChatPrint("[Event] Your health has been fully restored.")
         Feedback(admin, target:Nick() .. " → organism reset")
-        EventLog(admin:Nick() .. " reset organism for " .. target:Nick())
+        EventLog(LogPlayer(admin) .. " reset organism for " .. LogPlayer(target))
 
     elseif action == "healall" then
         local count = 0
@@ -900,7 +917,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
             if ResetOrganism(ply) then count = count + 1 end
         end
         PrintMessage(HUD_PRINTTALK, "[Event] " .. admin:Nick() .. " healed all players (" .. count .. ")")
-        EventLog(admin:Nick() .. " healed all players (" .. count .. ")")
+        EventLog(LogPlayer(admin) .. " healed all players (" .. count .. ")")
 
     elseif action == "resetplayer" then
         if not IsValid(target) then Feedback(admin, "Player not found."); return end
@@ -915,7 +932,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
         end)
         target:ChatPrint("[Event] You have been fully reset.")
         Feedback(admin, target:Nick() .. " → full reset")
-        EventLog(admin:Nick() .. " applied full reset to " .. target:Nick())
+        EventLog(LogPlayer(admin) .. " applied full reset to " .. LogPlayer(target))
 
     elseif action == "resetall" then
         local count = 0
@@ -926,7 +943,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
             if ResetOrganism(ply) then count = count + 1 end
         end
         PrintMessage(HUD_PRINTTALK, "[Event] " .. admin:Nick() .. " reset all organisms (" .. count .. ")")
-        EventLog(admin:Nick() .. " reset all organisms (" .. count .. ")")
+        EventLog(LogPlayer(admin) .. " reset all organisms (" .. count .. ")")
 
     elseif action == "unragdoll" then
         local function DoUnragdoll(ply)
@@ -942,14 +959,14 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
             else
                 Feedback(admin, target:Nick() .. " is not ragdolled.")
             end
-            EventLog(admin:Nick() .. " force un-ragdolled " .. target:Nick())
+            EventLog(LogPlayer(admin) .. " force un-ragdolled " .. LogPlayer(target))
         else
             local count = 0
             for _, ply in ipairs(player.GetAll()) do
                 if not ply:IsBot() and DoUnragdoll(ply) then count = count + 1 end
             end
             Feedback(admin, "Un-ragdolled " .. count .. " player(s)")
-            EventLog(admin:Nick() .. " force un-ragdolled all (" .. count .. ")")
+            EventLog(LogPlayer(admin) .. " force un-ragdolled all (" .. count .. ")")
         end
 
     elseif action == "tphere" then
@@ -970,7 +987,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
         end)
         target:ChatPrint("[Event] You were teleported to " .. admin:Nick())
         Feedback(admin, target:Nick() .. " → teleported to you")
-        EventLog(admin:Nick() .. " teleported " .. target:Nick() .. " to themselves")
+        EventLog(LogPlayer(admin) .. " teleported " .. LogPlayer(target) .. " to themselves")
 
     elseif action == "tpteam" then
         -- arg = team name; teleports that team to admin
@@ -1000,7 +1017,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
             table.insert(moved, ply:Nick())
         end
         Feedback(admin, "Teleported Team " .. arg .. " (" .. #moved .. " players)")
-        EventLog(admin:Nick() .. " teleported Team " .. arg .. " to themselves")
+        EventLog(LogPlayer(admin) .. " teleported Team " .. arg .. " to themselves")
 
     elseif action == "split" then
         -- arg = number of teams as string
@@ -1040,7 +1057,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
             for _, ply in ipairs(members) do table.insert(names, ply:Nick()) end
             PrintMessage(HUD_PRINTTALK, "  Team " .. TEAM_ROLES[t].name .. ": " .. table.concat(names, ", "))
         end
-        EventLog(admin:Nick() .. " split players into " .. numTeams .. " teams")
+        EventLog(LogPlayer(admin) .. " split players into " .. numTeams .. " teams")
 
         -- Refresh the menu with updated team assignments
         SendPlayerList(admin)
@@ -1060,7 +1077,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
             end
         end
         Feedback(admin, "Class '" .. className .. "' → Team " .. teamName .. " (" .. count .. " players)")
-        EventLog(admin:Nick() .. " set class of Team " .. teamName .. " to " .. className .. " (" .. count .. ")")
+        EventLog(LogPlayer(admin) .. " set class of Team " .. teamName .. " to " .. className .. " (" .. count .. ")")
 
     elseif action == "frespawn" then
         -- Force respawn: single player or all
@@ -1081,7 +1098,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
             DoRespawn(target)
             target:ChatPrint("[Event] You were force respawned by " .. admin:Nick())
             Feedback(admin, target:Nick() .. " → force respawned")
-            EventLog(admin:Nick() .. " force respawned " .. target:Nick())
+            EventLog(LogPlayer(admin) .. " force respawned " .. LogPlayer(target))
         else
             local count = 0
             for _, ply in ipairs(player.GetAll()) do
@@ -1091,7 +1108,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
                 count = count + 1
             end
             PrintMessage(HUD_PRINTTALK, "[Event] " .. admin:Nick() .. " force respawned all players (" .. count .. ")")
-            EventLog(admin:Nick() .. " force respawned all players (" .. count .. ")")
+            EventLog(LogPlayer(admin) .. " force respawned all players (" .. count .. ")")
         end
 
     elseif action == "event_start" then
@@ -1101,7 +1118,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
         ApplyGodmodeToAll(false)
         BroadcastEventState()
         PrintMessage(HUD_PRINTTALK, "[Event] Event started by " .. admin:Nick() .. " — godmode disabled.")
-        EventLog(admin:Nick() .. " started the event (godmode off)")
+        EventLog(LogPlayer(admin) .. " started the event (godmode off)")
 
     elseif action == "event_stop" then
         if not ZC_EventRunning then Feedback(admin, "No event is running."); return end
@@ -1111,7 +1128,7 @@ net.Receive("ZC_EventMenu_Action", function(len, admin)
         EventCleanup()
         BroadcastEventState()
         PrintMessage(HUD_PRINTTALK, "[Event] Event stopped by " .. admin:Nick() .. " — godmode restored, server cleaned up.")
-        EventLog(admin:Nick() .. " stopped the event (godmode on, cleanup done)")
+        EventLog(LogPlayer(admin) .. " stopped the event (godmode on, cleanup done)")
 
     elseif action == "refresh" then
         SendPlayerList(admin)
@@ -1167,7 +1184,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         ZC_EventLoadouts[name] = { group = "", weapons = {} }
         SaveLoadouts()
         PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " created loadout preset: " .. name)
+        EventLog(LogPlayer(admin) .. " created loadout preset: " .. name)
 
     elseif op == "delete" then
         local name = string.Trim(arg)
@@ -1175,7 +1192,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         ZC_EventLoadouts[name] = nil
         SaveLoadouts()
         PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " deleted loadout preset: " .. name)
+        EventLog(LogPlayer(admin) .. " deleted loadout preset: " .. name)
 
     elseif op == "setgroup" then
         local name, group = string.match(arg, "^(.+)|(.*)$")
@@ -1186,7 +1203,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         ZC_EventLoadouts[name].group = group
         SaveLoadouts()
         PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " set group of '" .. name .. "' to '" .. group .. "'")
+        EventLog(LogPlayer(admin) .. " set group of '" .. name .. "' to '" .. group .. "'")
 
     elseif op == "addwep" then
         local name, wclass = string.match(arg, "^(.+)|(.+)$")
@@ -1199,7 +1216,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         table.insert(weps, wclass)
         SaveLoadouts()
         PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " added '" .. wclass .. "' to loadout: " .. name)
+        EventLog(LogPlayer(admin) .. " added '" .. wclass .. "' to loadout: " .. name)
 
     elseif op == "removewep" then
         local name, idxStr = string.match(arg, "^(.+)|(%d+)$")
@@ -1213,7 +1230,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         table.remove(weps, idx)
         SaveLoadouts()
         PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " removed '" .. tostring(removed) .. "' from loadout: " .. name)
+        EventLog(LogPlayer(admin) .. " removed '" .. tostring(removed) .. "' from loadout: " .. name)
 
     elseif op == "addvar" then
         local parts = string.Explode("|", arg)
@@ -1230,7 +1247,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         table.insert(weps, entry)
         SaveLoadouts()
         PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " added random variable to loadout '" .. name .. "'")
+        EventLog(LogPlayer(admin) .. " added random variable to loadout '" .. name .. "'")
 
     elseif op == "addvaroption" then
         local name, idxStr, choice = string.match(arg, "^(.+)|(%d+)|(.+)$")
@@ -1246,7 +1263,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         table.insert(entry, choice)
         SaveLoadouts()
         PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " added choice '" .. choice .. "' to variable in '" .. name .. "' slot " .. idx)
+        EventLog(LogPlayer(admin) .. " added choice '" .. choice .. "' to variable in '" .. name .. "' slot " .. idx)
 
     elseif op == "removevaroption" then
         local name, idxStr, choiceIdxStr = string.match(arg, "^(.+)|(%d+)|(%d+)$")
@@ -1269,7 +1286,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         end
         SaveLoadouts()
         PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " removed choice from variable in '" .. name .. "' slot " .. idx)
+        EventLog(LogPlayer(admin) .. " removed choice from variable in '" .. name .. "' slot " .. idx)
 
     elseif op == "setarmor" then
         -- arg = "PresetName|slot|key"
@@ -1281,7 +1298,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         ZC_EventLoadouts[name].armor = ZC_EventLoadouts[name].armor or {}
         ZC_EventLoadouts[name].armor[slot] = key
         SaveLoadouts(); PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " set armor " .. slot .. "='" .. key .. "' on loadout '" .. name .. "'")
+        EventLog(LogPlayer(admin) .. " set armor " .. slot .. "='" .. key .. "' on loadout '" .. name .. "'")
 
     elseif op == "setarmorvar" then
         -- arg = "PresetName|slot|choice1|choice2|..."
@@ -1297,7 +1314,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         ZC_EventLoadouts[name].armor = ZC_EventLoadouts[name].armor or {}
         ZC_EventLoadouts[name].armor[slot] = entry
         SaveLoadouts(); PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " set armor var on " .. slot .. " in loadout '" .. name .. "'")
+        EventLog(LogPlayer(admin) .. " set armor var on " .. slot .. " in loadout '" .. name .. "'")
 
     elseif op == "cleararmor" then
         -- arg = "PresetName|slot"
@@ -1309,7 +1326,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
             ZC_EventLoadouts[name].armor[slot] = nil
         end
         SaveLoadouts(); PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " cleared armor slot " .. slot .. " on loadout '" .. name .. "'")
+        EventLog(LogPlayer(admin) .. " cleared armor slot " .. slot .. " on loadout '" .. name .. "'")
 
     elseif op == "addarmvaropt" then
         -- arg = "PresetName|slot|choice"
@@ -1332,7 +1349,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
             Feedback(admin, "Slot '" .. slot .. "' is not a random variable."); return
         end
         SaveLoadouts(); PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " added armor var choice '" .. choice .. "' to " .. slot .. " on '" .. name .. "'")
+        EventLog(LogPlayer(admin) .. " added armor var choice '" .. choice .. "' to " .. slot .. " on '" .. name .. "'")
 
     elseif op == "removearmvaropt" then
         -- arg = "PresetName|slot|choiceIndex" (1-based)
@@ -1365,7 +1382,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
             armor[slot] = choices
         end
         SaveLoadouts(); PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " removed armor var choice " .. idx .. " from " .. slot .. " on '" .. name .. "'")
+        EventLog(LogPlayer(admin) .. " removed armor var choice " .. idx .. " from " .. slot .. " on '" .. name .. "'")
 
     elseif op == "rename" then
         local oldName, newName = string.match(arg, "^(.+)|(.+)$")
@@ -1379,7 +1396,7 @@ net.Receive("ZC_EventMenu_LoadoutEdit", function(len, admin)
         ZC_EventLoadouts[oldName] = nil
         SaveLoadouts()
         PushLoadoutSavedToAdmins()
-        EventLog(admin:Nick() .. " renamed loadout '" .. oldName .. "' to '" .. newName .. "'")
+        EventLog(LogPlayer(admin) .. " renamed loadout '" .. oldName .. "' to '" .. newName .. "'")
     end
 end)
 
@@ -1435,6 +1452,75 @@ local function SendPlayerLoadoutList(ply)
     net.Start("ZC_PlayerLoadout_Open")
     net.Send(ply)
 end
+
+local function EnsureEventJoinClass(ply)
+    if not IsValid(ply) then return nil end
+
+    local className = ResolveCanonicalEventClassName(ply.PlayerClassName)
+    if not className or className == "" then
+        className = "Rebel"
+    end
+
+    if not IsRegisteredPlayerClass(className) then
+        className = "Rebel"
+    end
+
+    SetClassInPlace(ply, className)
+    return className
+end
+
+hook.Add("HG_PlayerSay", "ZC_EventJoinSpawn_Command", function(ply, txtTbl, text)
+    local trimmed = string.lower(string.Trim(text or ""))
+    if trimmed ~= "!eventjoin" and trimmed ~= "/eventjoin" and trimmed ~= "!joinevent" and trimmed ~= "/joinevent" then
+        return
+    end
+
+    txtTbl[1] = ""
+
+    if not IsEventRoundActive() then
+        ply:ChatPrint("[Event] Join is only available during Event rounds.")
+        return ""
+    end
+
+    if ply:Team() == TEAM_SPECTATOR then
+        ply:ChatPrint("[Event] Leave spectator mode before joining the Event.")
+        return ""
+    end
+
+    if ply:Alive() then
+        ply:ChatPrint("[Event] You are already in the Event.")
+        return ""
+    end
+
+    if ZC_EventState == 0 then
+        ply:ChatPrint("[Event] Event is not active yet.")
+        return ""
+    end
+
+    local className = EnsureEventJoinClass(ply) or "Rebel"
+
+    ply.gottarespawn = true
+    ply:Spawn()
+
+    timer.Simple(0.05, function()
+        if not IsValid(ply) or not ply:Alive() then return end
+
+        if ZC_ApplyRandomEventLoadoutForGroups then
+            local applied = ZC_ApplyRandomEventLoadoutForGroups(ply, { className }, true)
+            if not applied then
+                ZC_ApplyRandomEventLoadoutForGroups(ply, { ply.PlayerClassName or className }, true)
+            end
+        end
+
+        local hands = ply:Give("weapon_hands_sh")
+        if IsValid(hands) then
+            ply:SelectWeapon("weapon_hands_sh")
+        end
+    end)
+
+    ply:ChatPrint("[Event] Joined as " .. tostring(className) .. ".")
+    return ""
+end)
 
 hook.Add("HG_PlayerSay", "ZC_PlayerLoadout_Command", function(ply, txtTbl, text)
     local trimmed = string.lower(string.Trim(text))

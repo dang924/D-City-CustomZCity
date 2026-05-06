@@ -36,6 +36,7 @@ MODE.LootTable = {
 		{3,"hg_flashlight"},
 		{3,"weapon_bigbandage_sh"},
 		{2,"weapon_medkit_sh"},
+		{2,"weapon_afak_sh"},
 
 		{1,"weapon_matches"},
 
@@ -96,7 +97,6 @@ MODE.LootTable = {
 		{9,"weapon_px4beretta"},
 
 		{6,"weapon_deagle"},
-		{6,"weapon_colt9mm"},
 
 		{5,"weapon_doublebarrel_short"},
 		{5,"weapon_doublebarrel"},
@@ -116,14 +116,14 @@ MODE.LootTable = {
 
 		{3,"weapon_mini14"},
 		{3,"weapon_kar98"},
-		{3,"weapon_ar_pistol"},
+		{3,"weapon_m4a1"},
 		{3,"weapon_draco"},
 		{3,"weapon_mp5"},
-		{3,"weapon_m16a2"},
+		{3,"weapon_m4a1"},
 
 		{2,"weapon_mp7"},
 		{2,"weapon_sks"},
-		{2,"weapon_ar15"},
+		{2,"weapon_m4a1"},
 		{2,"weapon_ac556"},
 
 		{1,"weapon_vpo136"},
@@ -141,6 +141,7 @@ MODE.LootTableStandard = {
 		{8,"weapon_bandage_sh"},
 		{7,"weapon_ducttape"},
 		{6,"weapon_painkillers"},
+		{2,"weapon_afak_sh"},
 		{5,"weapon_bloodbag"},
 		{4,"hg_flashlight"},
 		{1,"weapon_matches"},--for dumbasses

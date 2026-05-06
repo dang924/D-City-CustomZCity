@@ -177,6 +177,56 @@ cmd:defaultAccess(ULib.ACCESS_SUPERADMIN)
 cmd:help("End the current map voting round")
 print("[MapVote] Registered: ulx mapvote_end (!mapvote_end)")
 
+-- !mapmanager — Open the GUI map manager panel (admin)
+local function ulxMapManager(calling_ply)
+    if not IsValid(calling_ply) then
+        print("[MapVote] Console cannot open map manager GUI")
+        return
+    end
+
+    if not MapVoting then
+        ULib.tsay(calling_ply, "[MapVote] ERROR: System not loaded!")
+        return
+    end
+
+    local allMaps = MapVoting:GetAllServerMaps()
+    net.Start("MapVote_OpenAdminPanel")
+    net.WriteTable(allMaps)
+    net.WriteTable(MapVoting.AvailableMaps)
+    net.Send(calling_ply)
+
+    ulx.logString(calling_ply:Nick() .. " opened the map manager panel")
+end
+
+local cmd = ulx.command(CATEGORY_NAME, "ulx mapmanager", ulxMapManager, "!mapmanager")
+cmd:defaultAccess(ULib.ACCESS_ADMIN)
+cmd:help("Open the GUI map manager to add/remove RTV maps")
+print("[MapVote] Registered: ulx mapmanager (!mapmanager)")
+
+-- Also intercept !mapmanager in chat
+hook.Add("HG_PlayerSay", "MapVote_ChatManager", function(ply, txtTbl, text)
+    local cmd_str = string.lower(string.Trim(text))
+    if cmd_str == "!mapmanager" or cmd_str == "/mapmanager" then
+        if not IsValid(ply) then return end
+        txtTbl[1] = ""
+        timer.Simple(0, function()
+            if not IsValid(ply) then return end
+            if not ply:IsAdmin() then
+                ply:PrintMessage(HUD_PRINTTALK, "[MapVote] Admins only.")
+                return
+            end
+            if MapVoting then
+                local allMaps = MapVoting:GetAllServerMaps()
+                net.Start("MapVote_OpenAdminPanel")
+                net.WriteTable(allMaps)
+                net.WriteTable(MapVoting.AvailableMaps)
+                net.Send(ply)
+            end
+        end)
+        return
+    end
+end)
+
 end -- SERVER
 
 print("[MapVote] ULX module loaded successfully!")

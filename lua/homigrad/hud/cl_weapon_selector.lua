@@ -3,6 +3,10 @@ hg = hg or {}
 hg.WeaponSelector = hg.WeaponSelector or {}
 local WS = hg.WeaponSelector
 
+local function IsZScavHotbarActive()
+    return ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive()
+end
+
 function WS.GetPrintName( self )
 	local class = self:GetClass()
 	local phrase = language.GetPhrase(class)
@@ -52,6 +56,7 @@ local AcsentColor = Color(155,0,0)
 local gradient_u = Material("vgui/gradient-d")
 
 function WS.WeaponSelectorDraw( ply )
+	if IsZScavHotbarActive() then return end
     if not IsValid( ply ) or not ply:Alive() or GetGlobalBool("RadialInventory", false) then return end
     if WS.Show < CurTime() then 
         WS.SelectedSlot = WS.LastSelectedSlot 
@@ -218,6 +223,7 @@ local function canUseSelector(ply)
 end
 
 function WS.ChangeSelectionWep( ply, key )
+	if IsZScavHotbarActive() then return end
     if not IsValid( ply ) or not ply:Alive() or GetGlobalBool("RadialInventory", false) then return end
     if ply.organism and ply.organism.otrub then return end
     if canUseSelector( ply ) then return end
@@ -268,6 +274,7 @@ function WS.ChangeSelectionWep( ply, key )
 end
 
 function WS.SetActuallyWeapon( ply, cmd )
+	if IsZScavHotbarActive() then return end
     if not IsValid( ply ) or not ply:Alive() or GetGlobalBool("RadialInventory", false) then return end
     if (cmd:KeyDown( IN_ATTACK ) or cmd:KeyDown( IN_ATTACK2 )) and WS.Show > CurTime() then
 

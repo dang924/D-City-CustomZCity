@@ -3,7 +3,25 @@
 
 if SERVER then return end
 if _G.ZC_CurrentRoundNilGuarded then return end
-if not isfunction(_G.CurrentRound) then return end
+if not isfunction(_G.CurrentRound) then
+    if not _G.ZC_CurrentRoundNilGuardPending then
+        _G.ZC_CurrentRoundNilGuardPending = true
+
+        local function installWhenCurrentRoundLoads()
+            if not isfunction(_G.CurrentRound) then return end
+
+            hook.Remove("InitPostEntity", "ZC_CurrentRoundNilGuard_Init")
+            timer.Remove("ZC_CurrentRoundNilGuard_Init")
+            _G.ZC_CurrentRoundNilGuardPending = nil
+            include("autorun/client/cl_currentround_nil_guard.lua")
+        end
+
+        hook.Add("InitPostEntity", "ZC_CurrentRoundNilGuard_Init", installWhenCurrentRoundLoads)
+        timer.Create("ZC_CurrentRoundNilGuard_Init", 1, 0, installWhenCurrentRoundLoads)
+    end
+
+    return
+end
 
 local OriginalCurrentRound = _G.CurrentRound
 

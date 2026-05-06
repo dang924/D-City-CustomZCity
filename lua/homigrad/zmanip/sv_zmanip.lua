@@ -45,10 +45,17 @@ end)
 local gestures = {
 	["fuckyou"] = {"fuckyou", false},
 	["thumb_up"] = {"thump_up", false},
+	["thumbdown"] = {"thumbdown", false},
+	["peace"] = {"peace", false},
+	["jumbo"] = {"jumbo", false},
+	["hello"] = {"hello", false},
+	["joke"] = {"joke", false},
 	["point"] = {"point", false},
+	["okayhand"] = {"okayhand", false},
+	["rock"] = {"rock", false},
+	["usedoor"] = {"usedoor", false},
 	--["door_open_back"] = {"door_open_back", false},
 	--["door_open_forward"] = {"door_open_forward", false},
-	--["usedoor"] = "usedoor",
 	--["visordown"] = "visordown"
 }
 

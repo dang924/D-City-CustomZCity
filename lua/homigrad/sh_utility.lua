@@ -1504,6 +1504,7 @@ local IsValid = IsValid
 
 		if not ply:KeyDown(IN_USE) then return false end
 		local eyetr = hg.eyeTrace(ply,100,nil,nil,nil,checkUse)
+		if not istable(eyetr) then return heldent end
 
 		local ent = eyetr.Entity
 

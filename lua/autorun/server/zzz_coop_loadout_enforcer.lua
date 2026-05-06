@@ -488,6 +488,7 @@ end
 local function ApplyManagedPresetForPlayer(ply)
     if not IsValid(ply) or not ply:Alive() then return false end
     if not CurrentRoundIsCoop() then return false end
+    if (tonumber(ply.ZC_CoopLoadoutSkipSpawnUntil) or 0) > CurTime() then return false end
 
     local className, subClass, presetName = ResolveManagedPresetForPlayer(ply)
     if not presetName then return false end
@@ -522,6 +523,7 @@ end
 
 local function ScheduleManagedApply(ply)
     if not IsValid(ply) then return end
+    if (tonumber(ply.ZC_CoopLoadoutSkipSpawnUntil) or 0) > CurTime() then return end
 
     ply.ZC_CoopManagedSpawnSerial = (tonumber(ply.ZC_CoopManagedSpawnSerial) or 0) + 1
     local serial = ply.ZC_CoopManagedSpawnSerial
@@ -546,6 +548,12 @@ end)
 
 hook.Add("Player Spawn", "ZC_CoopLoadoutEnforcer_CustomSpawn", function(ply)
     ScheduleManagedApply(ply)
+end)
+
+hook.Add("Fake Up", "ZC_CoopLoadoutEnforcer_MarkUnragdoll", function(ply)
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    if not CurrentRoundIsCoop() then return end
+    ply.ZC_CoopLoadoutSkipSpawnUntil = CurTime() + 1
 end)
 
 _G.ZC_CoopLoadoutEnforcerLoaded = true

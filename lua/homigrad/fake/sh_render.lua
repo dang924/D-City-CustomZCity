@@ -90,10 +90,25 @@ local IsValid, math_Clamp = IsValid, math.Clamp
 			if wep.DrawWorldModel2 then wep:DrawWorldModel2() end
 		end
 
-		local armors = ply:GetNetVar("Armor") or ent.PredictedArmor
-		local hideArmorRender = ply:GetNetVar("HideArmorRender", false) or ent.PredictedHideArmorRender
-		if armors and next(armors) and not hideArmorRender then
-			RenderArmors(ply, armors, ent)
+		local armors = ent:GetNetVar("Armor", nil)
+		if armors == nil then
+			armors = ent.PredictedArmor
+		end
+		if armors == nil then
+			armors = ply:GetNetVar("Armor")
+		end
+
+		local hideArmorRender = ent:GetNetVar("HideArmorRender", nil)
+		if hideArmorRender == nil then
+			hideArmorRender = ent.PredictedHideArmorRender
+		end
+		if hideArmorRender == nil then
+			hideArmorRender = ply:GetNetVar("HideArmorRender", false)
+		end
+
+		local hasBackpack = hg and hg.HasZScavBackpack and hg.HasZScavBackpack(ply, ent)
+		if ((armors and next(armors)) or hasBackpack) and not hideArmorRender then
+			RenderArmors(ply, armors or {}, ent)
 		end
 
 		hg.RenderBandages(ent, ply)

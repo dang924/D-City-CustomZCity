@@ -122,6 +122,17 @@ local secondary = {
     "weapon_glock17",
 }
 
+local function SafeRandomAppearance(ply)
+    if istable(hg) and istable(hg.Appearance) and isfunction(hg.Appearance.GetRandomAppearance) then
+        local ok, appearance = pcall(hg.Appearance.GetRandomAppearance, ply)
+        if ok and istable(appearance) then
+            return appearance
+        end
+    end
+
+    return ply and ply.CurAppearance or nil
+end
+
 local helmet = {
     "helmet1",
     "",
@@ -239,7 +250,10 @@ function CLASS.On(self, data)
         if specialModelChance == 1 then
             self:SetModel("models/dejtriyev/dreamybuss/prigozhin.mdl")
         else
-            local appearance = self.CurAppearance or hg.Appearance.GetRandomAppearance()
+            local appearance = self.CurAppearance or SafeRandomAppearance(self)
+            if not istable(appearance) then
+                appearance = {}
+            end
             appearance.AAttachments = ""
             appearance.AColthes = ""
             local currentModel = string.lower(appearance.AModel)
@@ -277,7 +291,7 @@ function CLASS.On(self, data)
     end
 
     if !(isDefenseMode and isCommander) then
-        local Appearance = self.CurAppearance or GetRandomAppearance(self)
+        local Appearance = self.CurAppearance or SafeRandomAppearance(self)
 
         self:SetPlayerColor(Color(0, 60, 10):ToVector())
         self:SetNetVar("Accessories", "")

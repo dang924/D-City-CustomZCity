@@ -26,7 +26,7 @@ end)
 --query:Execute()
 
 hook.Add( "PlayerInitialSpawn","ZB_Exp_OnInitSpawn", function( ply )
-    local name = ply:Name()
+    local name = ZC_GetSteamName and ZC_GetSteamName(ply) or ply:Name()
 	local steamID64 = ply:SteamID64()
 
     if not zb.Experience.Active then
@@ -124,8 +124,17 @@ function plyMeta:GiveSkill( ammout )
         return
     end 
 
+    local playerInstance = zb.Experience.PlayerInstances[steamID64]
+    if not istable(playerInstance) then
+        playerInstance = { skill = 0, deaths = 0, kills = 0 }
+        zb.Experience.PlayerInstances[steamID64] = playerInstance
+    end
 
-    zb.Experience.PlayerInstances[steamID64].skill = math.max( zb.Experience.PlayerInstances[steamID64].skill + ammout, 0 )
+    playerInstance.skill = math.max((tonumber(playerInstance.skill) or 0) + (tonumber(ammout) or 0), 0)
+
+    if not mysql or not mysql.Update then
+        return
+    end
 
 	local updateQuery = mysql:Update("zb_experience")
 		updateQuery:Update("skill", self:GetSkill())

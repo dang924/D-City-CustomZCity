@@ -1,4 +1,4 @@
-﻿function EFFECT:Init(data)
+function EFFECT:Init(data)
 	local Pos, Dir, Scl = data:GetOrigin(), data:GetNormal(), data:GetScale()
 	local emitter = ParticleEmitter(Pos)
 

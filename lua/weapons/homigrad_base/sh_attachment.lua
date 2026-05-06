@@ -729,6 +729,31 @@ if CLIENT then
 
 	local blurMat = Material("pp/blurscreen")
     local Dynamic = 0
+
+	local function NormalizeAttachmentMenuID(att)
+		if isstring(att) then
+			att = string.Trim(string.lower(att))
+			return (att ~= "" and att ~= "empty") and att or nil
+		end
+
+		if not istable(att) then return nil end
+
+		for _, candidate in ipairs({ att[1], att.key, att.att, att.class, att.id, att.name }) do
+			if isstring(candidate) then
+				candidate = string.Trim(string.lower(candidate))
+				if candidate ~= "" and candidate ~= "empty" then
+					return candidate
+				end
+			end
+		end
+
+		return nil
+	end
+
+	local function AttachmentSortWeight(row)
+		local att = NormalizeAttachmentMenuID(row and row[1]) or ""
+		return ((#att > 0) and string.byte(att, 1, 1) or 0) + ((row and row[2]) and 9999 or 0)
+	end
 	
 	local function refreshtbl()
 		local tblcpy = {}
@@ -736,7 +761,7 @@ if CLIENT then
 		local inv = lply:GetNetVar("Inventory")
 		if inv == nil then return end
 
-		local tbl = inv["Attachments"]
+		local tbl = istable(inv["Attachments"]) and inv["Attachments"] or {}
 		local wep = lply:GetActiveWeapon()
 		local achtbl = {}
 		if IsValid(wep) and ishgweapon(wep) then
@@ -744,14 +769,16 @@ if CLIENT then
 		end
 		
 		for i, att in pairs(tbl) do
-			if !att then continue end
-			table.insert(tblcpy, {att, false})
+			local attID = NormalizeAttachmentMenuID(att)
+			if not attID then continue end
+			table.insert(tblcpy, {attID, false})
 		end
 
-		if achtbl then
+		if istable(achtbl) then
 			for i, att in pairs(achtbl) do
-				if !att or !next(att) then continue end
-				table.insert(tblcpy, {att[1], true})
+				local attID = NormalizeAttachmentMenuID(att)
+				if not attID then continue end
+				table.insert(tblcpy, {attID, true})
 			end
 		end
 
@@ -837,7 +864,9 @@ if CLIENT then
 			scroll:Dock(FILL)
 			frame.scroll = scroll
 			
-			table.sort(tblcpy, function(a, b) return ((string.byte(a[1][1], 1, 1) + (a[2] and 9999 or 0)) > (string.byte(b[1][1], 1, 1) + (b[2] and 9999 or 0))) end)
+			table.sort(tblcpy, function(a, b)
+				return AttachmentSortWeight(a) > AttachmentSortWeight(b)
+			end)
 			for k, v in pairs(tblcpy) do
 				if !hg.attachmentslaunguage[v[1]] then continue end
 				local but = vgui.Create("DButton")

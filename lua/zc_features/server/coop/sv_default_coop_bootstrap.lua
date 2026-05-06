@@ -35,6 +35,17 @@ local function isExplicitAltModeForced(defaultMode)
     return true
 end
 
+local function getQueuedModeOverride(defaultMode)
+    if not zb then return nil end
+
+    local queued = lower(zb.nextround)
+    if queued ~= "" and queued ~= defaultMode then
+        return queued
+    end
+
+    return nil
+end
+
 local function setCoopDefault()
     local defaultMode, reason = getMapDefaultMode()
     if not defaultMode then
@@ -52,6 +63,12 @@ local function setCoopDefault()
         return true
     end
 
+    local queuedMode = getQueuedModeOverride(defaultMode)
+    if queuedMode then
+        print("[ZC CoopBootstrap] Skipping coop default: manual next round already queued as " .. queuedMode)
+        return true
+    end
+
     local roundName = ""
     if isfunction(CurrentRound) then
         local ok, round = pcall(CurrentRound)
@@ -62,10 +79,6 @@ local function setCoopDefault()
 
     if roundName == defaultMode then
         return true
-    end
-
-    if GetConVar and GetConVar("zb_forcemode") then
-        RunConsoleCommand("zb_forcemode", defaultMode)
     end
 
     if zb then
@@ -80,7 +93,7 @@ local function setCoopDefault()
         NextRound(defaultMode)
     end
 
-    print("[ZC CoopBootstrap] Enforced default mode: " .. defaultMode)
+    print("[ZC CoopBootstrap] Seeded default mode queue: " .. defaultMode)
     return true
 end
 

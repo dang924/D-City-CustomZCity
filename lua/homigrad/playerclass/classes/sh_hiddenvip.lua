@@ -5,7 +5,10 @@ function CLASS.Off(self)
 end
 
 local models = {
-    "models/mrduck/sentry/gangs/italian/Male_06_Shirt_Tie.mdl",
+    "models/bmscientistcits/male_03.mdl",
+    "models/bmscientistcits/male_06.mdl",
+    "models/bmscientistcits/female_02.mdl",
+    "models/bmscientistcits/female_06.mdl",
 }
 
 function CLASS.On(self)

@@ -317,6 +317,10 @@ end
 
 function SWEP:IsSprinting()
 	local ply = self:GetOwner()
+	if IsValid(ply) and ply:IsPlayer() and ZSCAV and ZSCAV.IsActive and ZSCAV:IsActive() and ply.zscav_disable_stamina_move_debuff then
+		return ply:IsSprinting()
+	end
+
 	if hg_aimtoshoot:GetBool() then
 		return not ply:IsNPC() and (self:KeyDown(IN_SPEED) and ply:GetVelocity():LengthSqr() > 150 * 150) or not self:KeyDown(IN_ATTACK2) and not IsValid(ply.FakeRagdoll)
 	else
@@ -1734,19 +1738,20 @@ function SWEP:GetAdditionalValues()
 	self.AdditionalPosPreLerp[2] = self.AdditionalPosPreLerp[2] + animpos * -20
 
 	if self:IsClient() and self:IsZoom() then
-		self.ZoomAnimLerp = LerpFT(0.05,self.ZoomAnimLerp or 0,self.k > 0.2 and self.k < 0.6 and 1 or 0)
+		local kZoom = self.k or 0 -- DCity patch: guard nil self.k (two-handed ADS GetAdditionalValues crash)
+		self.ZoomAnimLerp = LerpFT(0.05,self.ZoomAnimLerp or 0,kZoom > 0.2 and kZoom < 0.6 and 1 or 0)
 		self.AdditionalPosPreLerp[1] = self.AdditionalPosPreLerp[1] + math.ease.InOutBack(self.ZoomAnimLerp) * 3
 		self.AdditionalAngPreLerp[3] = self.AdditionalAngPreLerp[3] + math.ease.InOutBack(self.ZoomAnimLerp) * 2
-		if self.k > 0.7 and self.k < 0.75 then
+		if kZoom > 0.7 and kZoom < 0.75 then
 			local punchAng = Angle(math.Rand(-0.5, 0.5), math.Rand(-0.5, 0.5), math.Rand(-1, 1)) * (hg_coolcamera:GetBool() and 1 or 0.2)
 			ViewPunch(punchAng)
 			ViewPunch2(-punchAng)
 		end
-		if not self.zoomingBigSnd and self.k > 0.6 and not self:IsPistolHoldType() then
+		if not self.zoomingBigSnd and kZoom > 0.6 and not self:IsPistolHoldType() then
 			self:EmitSound("weapons/universal/uni_ads_in_0" .. math.random(6) .. ".wav",40)
 			self.zoomingBigSnd = true
 		end
-	elseif self.zoomingBigSnd and self:IsClient() and self.k < 0.75 then
+	elseif self.zoomingBigSnd and self:IsClient() and (self.k or 0) < 0.75 then
 		self:EmitSound("weapons/universal/uni_ads_out_01.wav",40)
 		self.zoomingBigSnd = false
 	end
@@ -2088,7 +2093,10 @@ function SWEP:SetHandPos(noset)
 	end
 	
 	if (ent ~= ply and ent ~= ply.OldRagdoll and !hg.RagdollCombatInUse(ply)) then
-		self.lhandik = self.lhandik and !((hg.KeyDown(ply, IN_FORWARD + IN_BACK) or ent:GetManipulateBoneAngles(ent:LookupBone("ValveBiped.Bip01_L_Finger11"))[2] < 0) and !self.reload and !ply:InVehicle())
+		local leftFingerBone = ent:LookupBone("ValveBiped.Bip01_L_Finger11")
+		local leftFingerAngles = leftFingerBone and ent:GetManipulateBoneAngles(leftFingerBone) or nil
+		local leftFingerFolded = leftFingerAngles and leftFingerAngles[2] < 0 or false
+		self.lhandik = self.lhandik and !((hg.KeyDown(ply, IN_FORWARD + IN_BACK) or leftFingerFolded) and !self.reload and !ply:InVehicle())
 	end
 
 	--ply:SetIK(false)

@@ -1,4 +1,4 @@
-﻿if SERVER then AddCSLuaFile() end
+if SERVER then AddCSLuaFile() end
 SWEP.Base = "weapon_melee"
 SWEP.PrintName = "Machete"
 SWEP.Instructions = "A machete is a broad blade used either as an agricultural implement similar to an axe, or in combat like a long-bladed knife.\n\nLMB to attack.\nRMB to block."

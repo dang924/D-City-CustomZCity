@@ -78,6 +78,13 @@ local function GetObservedKey(ply)
 end
 
 hook.Add("HUDPaint", "ZC_DrawBleedoutRing", function()
+    -- DCity: visual draw is handled by the unified EKG ring in
+    -- lua/autorun/client/cl_unconscious_ring.lua (which already follows
+    -- org.heartbeat). This hook used to draw a second centered ring/dots
+    -- on top of it, producing a duplicate inner circle during bleedout.
+    -- Keep the hook registered as a no-op so other code that may rely on
+    -- its presence (and so its associated state cleanup below) still runs,
+    -- but skip the actual rendering.
     if not enabled:GetBool() or not IsCoopRoundActive() then
         ringAlpha = math.Approach(ringAlpha, 0, FrameTime() * 3)
         observed = nil
@@ -87,10 +94,6 @@ hook.Add("HUDPaint", "ZC_DrawBleedoutRing", function()
     local lp = LocalPlayer()
     local ply = GetObservedPlayer(lp)
     local key = GetObservedKey(ply)
-
-    if key then
-        unconStartAt[key] = unconStartAt[key] or CurTime()
-    end
 
     if not IsValid(ply) or IsBleedoutExempt(ply) then
         ringAlpha = math.Approach(ringAlpha, 0, FrameTime() * 3)
@@ -106,47 +109,5 @@ hook.Add("HUDPaint", "ZC_DrawBleedoutRing", function()
         observed = nil
         return
     end
-
-    if observed ~= ply then
-        observed = ply
-        dotBeat = 0
-        if key then unconStartAt[key] = CurTime() end
-    end
-
-    ringAlpha = math.Approach(ringAlpha, 1, FrameTime() * 2)
-    dotBeat = math.floor(CurTime()) % 3
-
-    local elapsed = math.max(tonumber(org.uncon_timer) or -1, 0)
-    if elapsed <= 0 and key and unconStartAt[key] then
-        elapsed = CurTime() - unconStartAt[key]
-    end
-
-    local progress = math.Clamp(elapsed / BLEEDOUT_TIME, 0, 1)
-    local isCritical = progress >= 0.7
-
-    local scrW, scrH = ScrW(), ScrH()
-    local centerX, centerY = scrW / 2, scrH / 2
-
-    surface.SetDrawColor(0, 0, 0, 100 * ringAlpha)
-    surface.DrawRect(0, 0, scrW, scrH)
-
-    local ringColor = isCritical and Color(200, 0, 0, 255 * ringAlpha) or Color(220, 220, 220, 255 * ringAlpha)
-    local dotColor = isCritical and ringColor or Color(255, 255, 255, 255 * ringAlpha)
-
-    local radius = 180
-    local thickness = 8
-
-    DrawArc(centerX, centerY, radius, thickness, 0, 360, 60, Color(40, 40, 40, 100 * ringAlpha))
-    DrawArc(centerX, centerY, radius, thickness, 90, 90 - (progress * 360), 80, ringColor)
-
-    local dotText = ""
-    if isCritical then
-        local redDots = { ".!", "..!", "...!" }
-        dotText = redDots[dotBeat + 1]
-    else
-        local whiteDots = { ".", "..", "..." }
-        dotText = whiteDots[dotBeat + 1]
-    end
-
-    draw.SimpleText(dotText, "UnconsciousDots", centerX, centerY, dotColor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 end)
+

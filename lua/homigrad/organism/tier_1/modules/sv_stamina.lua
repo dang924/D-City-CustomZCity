@@ -48,13 +48,23 @@ module[2] = function(owner, org, timeValue)
 
 	stamina.sub = 0
 	local velLen = 0
+	local crouchRegenMul = 1
 	if owner:IsPlayer() then
 		local wep = owner:GetActiveWeapon()
 		local walk = owner:KeyDown(IN_FORWARD) or owner:KeyDown(IN_BACK) or owner:KeyDown(IN_MOVELEFT) or owner:KeyDown(IN_MOVERIGHT)
+		local zscavForceSprintDrain = (owner.zscav_weight_force_stamina_drain_until or 0) > CurTime()
 		velLen = max(min(owner:GetVelocity():Length(), org.moveMaxSpeed), 0) / (owner:GetRunSpeed() / hg_organism_stamina_sprint_mul:GetFloat())-- / ((IsValid(wep) and wep ~= NULL and wep:GetClass() == "weapon_hands_sh" and owner:KeyDown(IN_WALK)) and 1.3 or 0.58))
 		--print(velLen)
-		if (owner:OnGround() or owner:WaterLevel() >= 2) and walk and not owner:InVehicle() and owner:IsSprinting() and org.stamina[1] > 20 then
+		if (owner:OnGround() or owner:WaterLevel() >= 2) and walk and not owner:InVehicle() and (owner:IsSprinting() or zscavForceSprintDrain) and org.stamina[1] > 20 then
 			stamina.sub = (owner:WaterLevel() >= 2 and 2 or 1) * (velLen ^ 0.5)
+		end
+
+		if owner:Crouching() then
+			if owner.zscav_disable_stamina_move_debuff then
+				crouchRegenMul = velLen < 0.1 and 1.55 or 1.25
+			else
+				crouchRegenMul = velLen < 0.1 and 1.1 or 1
+			end
 		end
 	end
 
@@ -85,7 +95,7 @@ module[2] = function(owner, org, timeValue)
 	//org.o2[1] = org.o2[1] - min(stamina.sub * timeValue, org.o2.regen * timeValue)
 	
 	//local old = stamina[1]
-	stamina[1] = min(stamina[1] + stamina.regen * timeValue * 8 * 1.5 * math.max(org.stamina[1] / org.stamina.max, 0.2) ^ 0.5 * (org.noradrenaline / 2 + 1) * (org.o2[1] / org.o2.range) * (org.adrenaline / 16 + 1) * (org.satiety/700 + 1) * ((owner:IsPlayer() and owner:Crouching() and velLen < 0.1) and 1.1 or 1) * (org.holdingbreath and 0 or 1) * (org.lungsfunction and 1 or 0), stamina.max)
+	stamina[1] = min(stamina[1] + stamina.regen * timeValue * 8 * 1.5 * math.max(org.stamina[1] / org.stamina.max, 0.2) ^ 0.5 * (org.noradrenaline / 2 + 1) * (org.o2[1] / org.o2.range) * (org.adrenaline / 16 + 1) * (org.satiety/700 + 1) * crouchRegenMul * (org.holdingbreath and 0 or 1) * (org.lungsfunction and 1 or 0), stamina.max)
 
 	-- local painfrommoving = (stamina[1] < 150 and 1 or 0) * (stamina[1] - old) * (org.chest)
 	-- org.painadd = org.painadd + painfrommoving * timeValue * 5

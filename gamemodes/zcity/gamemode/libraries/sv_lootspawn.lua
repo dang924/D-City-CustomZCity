@@ -406,9 +406,15 @@ local functions_break = {
 }
 
 hook.Add("ZB_InventoryChecked", "LootSpawn", function(ply, ent)
+	if not IsValid(ent) then return end
 	ent:SetNetVar("Inventory", ent.inventory)
-	if not IsValid(ent) or ent:IsPlayer() or ent.was_opened or not string.find(ent:GetClass(),"prop_") then return end
+	if ent:IsPlayer() or ent.was_opened or not string.find(ent:GetClass(),"prop_") then return end
 	if not hg.loot_boxes[string.lower(ent:GetModel())] then return end
+
+	-- ZRP world-container / event-adopted containers manage their own loot.
+	-- Suppress the legacy hg LootSpawn fill so it doesn't clobber the
+	-- event-mode loot table (set via zb_event_loot_menu).
+	if ent.ZRP_WorldContainerIdx or ent.ZRP_AdoptedByEvent then return end
 	
 	ent.armors = {}
 	ent.inventory = {}
